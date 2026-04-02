@@ -20,12 +20,29 @@ model User {
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   addresses Address[]
+  paymentMethods PaymentMethod[]
   outlets   Outlet[]
   vendorProfile VendorProfile?
   wallet    Wallet?
   settlements VendorSettlement[]
   createdTickets SupportTicket[] @relation("TicketCreator")
   receivedTickets SupportTicket[] @relation("TicketTarget")
+}
+
+model PaymentMethod {
+  id            String   @id @default(uuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id])
+  type          String   @default("card") // card, upi
+  cardType      String?  // visa, mastercard, rupay
+  lastFour      String?  // Last 4 digits only (RBI compliant)
+  cardHolderName String?
+  expiryMonth   String?
+  expiryYear    String?
+  upiId         String?  // For UPI type
+  isDefault     Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 }
 
 model Address {

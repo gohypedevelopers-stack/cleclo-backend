@@ -1,6 +1,6 @@
 const express = require('express');
 const multer = require('multer');
-const { createOrder, checkPrice, uploadImage } = require('../controllers/orderController');
+const { createOrder, checkPrice, uploadImage, getCustomerOrders, getOrder, updateOrderStatus } = require('../controllers/orderController');
 const path = require('path');
 
 const router = express.Router();
@@ -19,5 +19,10 @@ const upload = multer({ storage });
 router.post('/', createOrder);
 router.post('/price-check', checkPrice);
 router.post('/upload', upload.single('image'), uploadImage);
+
+// Customer order management routes
+router.get('/customer/:userId', getCustomerOrders);
+router.get('/:id', getOrder);
+router.patch('/:id/status', updateOrderStatus);
 
 module.exports = router;

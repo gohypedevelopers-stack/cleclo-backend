@@ -13,6 +13,8 @@ app.use('/auth', authRoutes);
 app.use('/admin', require('./src/routes/adminRoutes'));
 app.use('/vendor', require('./src/routes/vendorRoutes'));
 app.use('/tickets', require('./src/routes/supportRoutes'));
+app.use('/addresses', require('./src/routes/addressRoutes'));
+app.use('/payment-methods', require('./src/routes/paymentMethodRoutes'));
 
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'Auth Service is running' });

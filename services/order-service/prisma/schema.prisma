@@ -16,6 +16,8 @@ model Order {
   totalAmount   Float
   pickupTime    DateTime
   deliveryTime  DateTime
+  pickupAddress String?     // Pickup location address
+  deliveryAddress String?   // Delivery location address
   serviceType   String      @default("Standard") // Standard, Express 48h, Express 24h
   paymentStatus String      @default("pending")
   gstNumber     String?     // Optional GST

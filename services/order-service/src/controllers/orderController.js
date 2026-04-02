@@ -5,7 +5,7 @@ const prisma = new PrismaClient();
 
 const createOrder = async (req, res) => {
     try {
-        const { userId, items, pickupTime, serviceType, gstNumber } = req.body;
+        const { userId, items, pickupTime, serviceType, gstNumber, pickupAddress, deliveryAddress } = req.body;
         // items: [{ itemId, quantity, condition, images: [url1, url2] }]
 
         // Simple calculation logic (omitted complex item lookup for speed, assuming client sends totals or we'd need Catalog Service calls)
@@ -24,6 +24,8 @@ const createOrder = async (req, res) => {
                 userId,
                 pickupTime: new Date(pickupTime),
                 deliveryTime,
+                pickupAddress,
+                deliveryAddress,
                 serviceType,
                 totalAmount,
                 gstNumber,
@@ -75,8 +77,87 @@ const uploadImage = (req, res) => {
     res.json({ imageUrl });
 };
 
+// Get all orders for a specific customer
+const getCustomerOrders = async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const orders = await prisma.order.findMany({
+            where: { userId },
+            include: {
+                items: {
+                    include: {
+                        images: true
+                    }
+                }
+            },
+            orderBy: { createdAt: 'desc' }
+        });
+        res.json(orders);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: 'Internal Server Error', error: error.message });
+    }
+};
+
+// Get single order by ID
+const getOrder = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const order = await prisma.order.findUnique({
+            where: { id },
+            include: {
+                items: {
+                    include: {
+                        images: true
+                    }
+                }
+            }
+        });
+        
+        if (!order) {
+            return res.status(404).json({ message: 'Order not found' });
+        }
+        
+        res.json(order);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: 'Internal Server Error', error: error.message });
+    }
+};
+
+// Update order status (for cancellation, etc.)
+const updateOrderStatus = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { status } = req.body;
+        
+        const order = await prisma.order.update({
+            where: { id },
+            data: { status },
+            include: {
+                items: {
+                    include: {
+                        images: true
+                    }
+                }
+            }
+        });
+        
+        res.json(order);
+    } catch (error) {
+        console.error(error);
+        if (error.code === 'P2025') {
+            return res.status(404).json({ message: 'Order not found' });
+        }
+        res.status(500).json({ message: 'Internal Server Error', error: error.message });
+    }
+};
+
 module.exports = {
     createOrder,
     checkPrice,
-    uploadImage
+    uploadImage,
+    getCustomerOrders,
+    getOrder,
+    updateOrderStatus
 };

@@ -154,9 +154,27 @@ const registerVendor = async (req, res) => {
     }
 };
 
+const updateProfile = async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const { name, email, phone } = req.body;
+
+        const user = await prisma.user.update({
+            where: { id: userId },
+            data: { name, email, phone }
+        });
+
+        res.json({ message: 'Profile updated successfully', user });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: 'Internal Server Error' });
+    }
+};
+
 module.exports = {
     signup,
     login,
     verifyOtp,
-    registerVendor
+    registerVendor,
+    updateProfile
 };

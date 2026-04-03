@@ -9,34 +9,62 @@ async function main() {
     // Hash password for all users
     const hashedPassword = await bcrypt.hash('password123', 10);
 
-    // 1. Create Admin User
-    const admin = await prisma.user.create({
-        data: {
-            name: 'Admin User',
+    // 1. Create Admin Users
+    const adminUsers = [
+        {
+            name: 'Super Admin',
             email: 'admin@cleclo.com',
             phone: '9999999999',
-            password: hashedPassword,
-            role: 'admin',
-            status: 'active',
-            userType: 'regular',
-            isVerified: true,
-            addresses: {
-                create: [
-                    {
-                        addressLine: '123 Admin Street, Mumbai',
-                        lat: 19.0760,
-                        lng: 72.8777,
-                        type: 'work',
+            adminRole: 'super_admin',
+        },
+        {
+            name: 'Operations Admin',
+            email: 'operations.admin@cleclo.com',
+            phone: '9999999998',
+            adminRole: 'operations_admin',
+        },
+        {
+            name: 'Finance Admin',
+            email: 'finance.admin@cleclo.com',
+            phone: '9999999997',
+            adminRole: 'finance_admin',
+        },
+    ];
+
+    const admins = [];
+
+    for (const adminData of adminUsers) {
+        const admin = await prisma.user.create({
+            data: {
+                name: adminData.name,
+                email: adminData.email,
+                phone: adminData.phone,
+                password: hashedPassword,
+                role: 'admin',
+                adminRole: adminData.adminRole,
+                status: 'active',
+                userType: 'regular',
+                isVerified: true,
+                addresses: {
+                    create: [
+                        {
+                            addressLine: '123 Admin Street, Mumbai',
+                            lat: 19.0760,
+                            lng: 72.8777,
+                            type: 'work',
+                        },
+                    ],
+                },
+                wallet: {
+                    create: {
+                        balance: 10000,
                     },
-                ],
-            },
-            wallet: {
-                create: {
-                    balance: 10000,
                 },
             },
-        },
-    });
+        });
+
+        admins.push(admin);
+    }
 
     // 2. Create Regular Customers (10 customers)
     const customers = [];
@@ -325,7 +353,7 @@ async function main() {
     });
 
     console.log('✅ Auth Service seeding completed!');
-    console.log(`   - Created 1 admin`);
+    console.log(`   - Created ${admins.length} admins`);
     console.log(`   - Created ${customers.length} customers`);
     console.log(`   - Created ${vendors.length} vendors`);
     console.log(`   - Created ${riders.length} riders`);

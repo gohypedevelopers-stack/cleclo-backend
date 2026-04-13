@@ -1,5 +1,6 @@
 const express = require('express');
 const adminController = require('../controllers/adminController');
+const adminInsightsController = require('../controllers/adminInsightsController');
 const settlementController = require('../controllers/settlementController');
 const { ADMIN_ROLES } = require('../config/adminAccess');
 const { authenticateAdmin, authorizeAdminRoles } = require('../middleware/adminAuth');
@@ -12,6 +13,15 @@ router.use(authenticateAdmin);
 // DASHBOARD
 // ============================================
 router.get(
+  '/dashboard/overview',
+  authorizeAdminRoles(
+    ADMIN_ROLES.SUPER_ADMIN,
+    ADMIN_ROLES.OPERATIONS_ADMIN,
+    ADMIN_ROLES.FINANCE_ADMIN
+  ),
+  adminInsightsController.getDashboardOverviewHandler
+);
+router.get(
   '/dashboard/stats',
   authorizeAdminRoles(
     ADMIN_ROLES.SUPER_ADMIN,
@@ -19,6 +29,25 @@ router.get(
     ADMIN_ROLES.FINANCE_ADMIN
   ),
   adminController.getDashboardStats
+);
+
+// ============================================
+// ISSUE ALERTS
+// ============================================
+router.get(
+  '/issues',
+  authorizeAdminRoles(ADMIN_ROLES.SUPER_ADMIN, ADMIN_ROLES.OPERATIONS_ADMIN),
+  adminInsightsController.getIssueAlertsHandler
+);
+router.post(
+  '/issues/review-all',
+  authorizeAdminRoles(ADMIN_ROLES.SUPER_ADMIN, ADMIN_ROLES.OPERATIONS_ADMIN),
+  adminInsightsController.markAllIssuesReviewedHandler
+);
+router.patch(
+  '/issues/:issueId',
+  authorizeAdminRoles(ADMIN_ROLES.SUPER_ADMIN, ADMIN_ROLES.OPERATIONS_ADMIN),
+  adminInsightsController.updateIssueAlertHandler
 );
 
 // ============================================

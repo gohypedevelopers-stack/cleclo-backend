@@ -83,10 +83,12 @@ model VendorProfile {
   businessType    String? // Sole Proprietorship, LLP, etc
   servicesOffered String? // Comma separated: Dry Clean, Wash Only, Iron
   dailyCapacity   Int?
+  commissionRate  Float   @default(18)
   bankHolderName  String?
   bankName        String?
   accountNumber   String?
   ifscCode        String?
+  bankVerified    Boolean @default(false)
   businessProofUrl String?
   ownerIdProofUrl  String?
   termsAccepted   Boolean @default(false)
@@ -199,4 +201,38 @@ model AdminLoginEvent {
   createdAt       DateTime @default(now())
 
   @@index([userId, createdAt])
+}
+
+model AdminIssueAlert {
+  id                    String   @id @default(uuid())
+  orderId               String?  @unique
+  supportTicketId       String?  @unique
+  customerId            String?
+  vendorId              String?
+  issueType             String
+  severity              String   @default("Medium")
+  status                String   @default("Open") // Open, Investigating, Escalated, Resolved
+  unread                Boolean  @default(true)
+  city                  String?
+  description           String
+  summary               String
+  assignedTo            String?
+  rootCause             String?
+  refundStatus          String   @default("Not Initiated")
+  escalatedTo           String?
+  autoEscalateAfterHours Int     @default(4)
+  financialRiskLabel    String?  @default("Estimated Refund Risk")
+  financialRiskAmount   Float    @default(0)
+  vendorRiskLevel       String?
+  vendorRiskTrigger     String?
+  source                String   @default("order") // order, support_ticket
+  metadata              Json?
+  damageClaim           Json?
+  reviewedAt            DateTime?
+  resolvedAt            DateTime?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([status, updatedAt])
+  @@index([vendorId, createdAt])
 }

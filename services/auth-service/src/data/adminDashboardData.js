@@ -2,6 +2,7 @@ const { PrismaClient } = require('@prisma/client');
 
 const { ADMIN_ROLES } = require('../config/adminAccess');
 const { fetchAllAdminOrders, resolveAdminOrderIssue } = require('../utils/orderServiceClient');
+const { persistIssueClaimImage } = require('../utils/adminIssueAssetStorage');
 
 const prisma = new PrismaClient();
 
@@ -28,6 +29,60 @@ const ISSUE_ICON_MAP = {
   'Pickup Delay': 'delay',
   'Customer No-Show': 'no_show',
   'System Issue': 'system'
+};
+
+const ISSUE_ALERT_STATUSES = {
+  OPEN: 'OPEN',
+  INVESTIGATING: 'INVESTIGATING',
+  ESCALATED: 'ESCALATED',
+  RESOLVED: 'RESOLVED'
+};
+const ISSUE_ALERT_STATUS_LABELS = {
+  [ISSUE_ALERT_STATUSES.OPEN]: 'Open',
+  [ISSUE_ALERT_STATUSES.INVESTIGATING]: 'Investigating',
+  [ISSUE_ALERT_STATUSES.ESCALATED]: 'Escalated',
+  [ISSUE_ALERT_STATUSES.RESOLVED]: 'Resolved'
+};
+const ISSUE_ALERT_STATUS_BY_LABEL = Object.fromEntries(
+  Object.entries(ISSUE_ALERT_STATUS_LABELS).map(([value, label]) => [label, value])
+);
+
+const ISSUE_ALERT_SEVERITIES = {
+  CRITICAL: 'CRITICAL',
+  HIGH: 'HIGH',
+  MEDIUM: 'MEDIUM',
+  LOW: 'LOW'
+};
+const ISSUE_ALERT_SEVERITY_LABELS = {
+  [ISSUE_ALERT_SEVERITIES.CRITICAL]: 'Critical',
+  [ISSUE_ALERT_SEVERITIES.HIGH]: 'High',
+  [ISSUE_ALERT_SEVERITIES.MEDIUM]: 'Medium',
+  [ISSUE_ALERT_SEVERITIES.LOW]: 'Low'
+};
+const ISSUE_ALERT_SEVERITY_BY_LABEL = Object.fromEntries(
+  Object.entries(ISSUE_ALERT_SEVERITY_LABELS).map(([value, label]) => [label, value])
+);
+
+const ISSUE_REFUND_STATUSES = {
+  NOT_INITIATED: 'NOT_INITIATED',
+  PROCESSING: 'PROCESSING',
+  COMPLETED: 'COMPLETED'
+};
+const ISSUE_REFUND_STATUS_LABELS = {
+  [ISSUE_REFUND_STATUSES.NOT_INITIATED]: 'Not Initiated',
+  [ISSUE_REFUND_STATUSES.PROCESSING]: 'Processing',
+  [ISSUE_REFUND_STATUSES.COMPLETED]: 'Completed'
+};
+const ISSUE_REFUND_STATUS_BY_LABEL = Object.fromEntries(
+  Object.entries(ISSUE_REFUND_STATUS_LABELS).map(([value, label]) => [label, value])
+);
+const REFUND_STATUSES = Object.values(ISSUE_REFUND_STATUS_LABELS);
+
+const SETTLEMENT_STATUSES = {
+  PENDING: 'PENDING',
+  PROCESSING: 'PROCESSING',
+  PAID: 'PAID',
+  FAILED: 'FAILED'
 };
 
 const ORDER_ISSUE_CONFIG = {
@@ -72,6 +127,46 @@ const ORDER_ISSUE_CONFIG = {
     minimumRisk: 200
   }
 };
+
+function getIssueStatusValue(value) {
+  return ISSUE_ALERT_STATUS_BY_LABEL[value] || value || ISSUE_ALERT_STATUSES.OPEN;
+}
+
+function getIssueStatusLabel(value) {
+  return ISSUE_ALERT_STATUS_LABELS[value] || value || 'Open';
+}
+
+function getIssueSeverityValue(value) {
+  return ISSUE_ALERT_SEVERITY_BY_LABEL[value] || value || ISSUE_ALERT_SEVERITIES.MEDIUM;
+}
+
+function getIssueSeverityLabel(value) {
+  return ISSUE_ALERT_SEVERITY_LABELS[value] || value || 'Medium';
+}
+
+function getRefundStatusValue(value) {
+  return ISSUE_REFUND_STATUS_BY_LABEL[value] || value || ISSUE_REFUND_STATUSES.NOT_INITIATED;
+}
+
+function getRefundStatusLabel(value) {
+  return ISSUE_REFUND_STATUS_LABELS[value] || value || 'Not Initiated';
+}
+
+function getSettlementStatusValue(value) {
+  if (value === 'pending') return SETTLEMENT_STATUSES.PENDING;
+  if (value === 'processing') return SETTLEMENT_STATUSES.PROCESSING;
+  if (value === 'paid') return SETTLEMENT_STATUSES.PAID;
+  if (value === 'failed') return SETTLEMENT_STATUSES.FAILED;
+  return value || SETTLEMENT_STATUSES.PENDING;
+}
+
+function getSettlementStatusLabel(value) {
+  const normalized = getSettlementStatusValue(value);
+  if (normalized === SETTLEMENT_STATUSES.PAID) return 'Completed';
+  if (normalized === SETTLEMENT_STATUSES.FAILED) return 'Failed';
+  if (normalized === SETTLEMENT_STATUSES.PROCESSING) return 'Processing';
+  return 'Pending';
+}
 
 function formatCurrency(value) {
   return INR_FORMATTER.format(Math.round(value || 0));
@@ -248,7 +343,7 @@ function getDeliveryEta(order, issueAlert) {
   if (order.status === 'delivered') return 'Delivered';
   if (order.status === 'cancelled') return 'Cancelled';
 
-  if (issueAlert && issueAlert.status !== 'Resolved') {
+  if (issueAlert && getIssueStatusLabel(issueAlert.status) !== 'Resolved') {
     if (issueAlert.issueType === 'Pickup Delay') return 'Delayed';
     if (issueAlert.issueType === 'Item Damaged') return 'Damage review in progress';
     return 'Investigation in progress';
@@ -267,7 +362,7 @@ function getDeliveryEta(order, issueAlert) {
 }
 
 function getOrderStatusLabel(order, issueAlert) {
-  if (issueAlert && issueAlert.status !== 'Resolved') {
+  if (issueAlert && getIssueStatusLabel(issueAlert.status) !== 'Resolved') {
     return issueAlert.issueType === 'Pickup Delay' ? 'Pickup Delayed' : 'Issue Reported';
   }
 
@@ -326,10 +421,14 @@ function normalizeDamageClaim(value) {
   if (Object.keys(damageClaim).length === 0) return null;
 
   return {
-    damageImageUploaded: Boolean(damageClaim.damageImageUploaded),
-    preCleanImageUploaded: Boolean(damageClaim.preCleanImageUploaded),
+    damageImageUploaded: Boolean(damageClaim.damageImageUploaded || damageClaim.damageImageUrl),
+    preCleanImageUploaded: Boolean(damageClaim.preCleanImageUploaded || damageClaim.preCleanImageUrl),
     invoiceValue: Number(damageClaim.invoiceValue || 0),
-    liabilityCap: Number(damageClaim.liabilityCap || 0)
+    liabilityCap: Number(damageClaim.liabilityCap || 0),
+    damageImageUrl: damageClaim.damageImageUrl || null,
+    preCleanImageUrl: damageClaim.preCleanImageUrl || null,
+    damageImageName: damageClaim.damageImageName || null,
+    preCleanImageName: damageClaim.preCleanImageName || null
   };
 }
 
@@ -346,8 +445,20 @@ function uniqueValues(values) {
   return Array.from(new Set(values.filter(Boolean))).sort((left, right) => String(left).localeCompare(String(right)));
 }
 
+function getIssueDateRange(dateRange = 'all', startDate, endDate) {
+  if (startDate && endDate) {
+    return getPeriodRange('custom', startDate, endDate);
+  }
+
+  if (!dateRange || dateRange === 'all') {
+    return null;
+  }
+
+  return getPeriodRange(dateRange, startDate, endDate);
+}
+
 function calculateHoursOpen(createdAt, resolvedAt, status) {
-  const end = status === 'Resolved' && resolvedAt ? new Date(resolvedAt) : new Date();
+  const end = getIssueStatusLabel(status) === 'Resolved' && resolvedAt ? new Date(resolvedAt) : new Date();
   const diffMs = end.getTime() - new Date(createdAt).getTime();
   return Math.max(1, Math.round(diffMs / (60 * 60 * 1000)));
 }
@@ -405,10 +516,10 @@ function getSupportTicketIssueConfig(ticket) {
 }
 
 function mapSupportTicketStatus(ticket) {
-  if (ticket.status === 'resolved' || ticket.status === 'closed') return 'Resolved';
-  if (ticket.isEscalated) return 'Escalated';
-  if (ticket.status === 'in_progress') return 'Investigating';
-  return 'Open';
+  if (ticket.status === 'resolved' || ticket.status === 'closed') return ISSUE_ALERT_STATUSES.RESOLVED;
+  if (ticket.isEscalated) return ISSUE_ALERT_STATUSES.ESCALATED;
+  if (ticket.status === 'in_progress') return ISSUE_ALERT_STATUSES.INVESTIGATING;
+  return ISSUE_ALERT_STATUSES.OPEN;
 }
 
 function getRoleConfiguration(adminRole) {
@@ -496,14 +607,17 @@ function buildOrderIssueSeed(order, userMap) {
       customerId: order.userId || null,
       vendorId: order.vendorId || null,
       issueType: config.issueType,
-      severity: config.severity,
-      status: 'Open',
+      severity: getIssueSeverityValue(config.severity),
+      status: ISSUE_ALERT_STATUSES.OPEN,
       unread: true,
       city,
       description: order.issueNote || `${config.issueType} reported on order ${order.id}.`,
       summary: order.issueNote || `${config.issueType} requires admin review for ${location}.`,
       assignedTo: defaultAssignee(config.issueType),
-      refundStatus: order.paymentStatus === 'refunded' ? 'Completed' : 'Not Initiated',
+      refundStatus:
+        order.paymentStatus === 'refunded'
+          ? ISSUE_REFUND_STATUSES.COMPLETED
+          : ISSUE_REFUND_STATUSES.NOT_INITIATED,
       escalatedTo: null,
       autoEscalateAfterHours: config.autoEscalateAfterHours,
       financialRiskLabel: config.financialRiskLabel,
@@ -553,14 +667,14 @@ function buildSupportIssueSeed(ticket, userMap) {
       customerId: customer?.id || null,
       vendorId: vendor?.id || null,
       issueType: config.issueType,
-      severity: config.severity,
+      severity: getIssueSeverityValue(config.severity),
       status: mapSupportTicketStatus(ticket),
       unread: ticket.status !== 'resolved' && ticket.status !== 'closed',
       city,
       description: ticket.message || ticket.subject,
       summary: ticket.subject || `${config.issueType} support alert`,
       assignedTo: defaultAssignee(config.issueType),
-      refundStatus: 'Not Initiated',
+      refundStatus: ISSUE_REFUND_STATUSES.NOT_INITIATED,
       escalatedTo: ticket.isEscalated ? defaultEscalationTarget(config.issueType) : null,
       autoEscalateAfterHours: config.autoEscalateAfterHours,
       financialRiskLabel: config.financialRiskLabel,
@@ -582,9 +696,9 @@ function mergeSeedWithExisting(seedData, existingAlert) {
   const mergedDamageClaim =
     normalizeDamageClaim(existingAlert?.damageClaim) || normalizeDamageClaim(seedData.damageClaim);
 
-  let status = existingAlert?.status || seedData.status || 'Open';
-  if (seedData.status === 'Resolved') status = 'Resolved';
-  if (existingAlert?.status === 'Resolved') status = 'Resolved';
+  let status = existingAlert?.status || seedData.status || ISSUE_ALERT_STATUSES.OPEN;
+  if (seedData.status === ISSUE_ALERT_STATUSES.RESOLVED) status = ISSUE_ALERT_STATUSES.RESOLVED;
+  if (existingAlert?.status === ISSUE_ALERT_STATUSES.RESOLVED) status = ISSUE_ALERT_STATUSES.RESOLVED;
 
   return {
     orderId: seedData.orderId,
@@ -594,17 +708,19 @@ function mergeSeedWithExisting(seedData, existingAlert) {
     issueType: seedData.issueType,
     severity: seedData.severity,
     status,
-    unread: status === 'Resolved' ? false : existingAlert ? existingAlert.unread : seedData.unread,
+    unread:
+      status === ISSUE_ALERT_STATUSES.RESOLVED ? false : existingAlert ? existingAlert.unread : seedData.unread,
     city: seedData.city,
     description: seedData.description,
     summary: seedData.summary,
     assignedTo: existingAlert?.assignedTo || seedData.assignedTo || defaultAssignee(seedData.issueType),
     rootCause: existingAlert?.rootCause || null,
-    refundStatus: existingAlert?.refundStatus || seedData.refundStatus || 'Not Initiated',
+    refundStatus:
+      existingAlert?.refundStatus || seedData.refundStatus || ISSUE_REFUND_STATUSES.NOT_INITIATED,
     escalatedTo:
       existingAlert?.escalatedTo ||
       seedData.escalatedTo ||
-      (status === 'Escalated' ? defaultEscalationTarget(seedData.issueType) : null),
+      (status === ISSUE_ALERT_STATUSES.ESCALATED ? defaultEscalationTarget(seedData.issueType) : null),
     autoEscalateAfterHours: seedData.autoEscalateAfterHours,
     financialRiskLabel: seedData.financialRiskLabel,
     financialRiskAmount: seedData.financialRiskAmount,
@@ -615,7 +731,9 @@ function mergeSeedWithExisting(seedData, existingAlert) {
     damageClaim: mergedDamageClaim,
     reviewedAt: existingAlert?.reviewedAt || null,
     resolvedAt:
-      status === 'Resolved' ? existingAlert?.resolvedAt || new Date() : existingAlert?.resolvedAt || null
+      status === ISSUE_ALERT_STATUSES.RESOLVED
+        ? existingAlert?.resolvedAt || new Date()
+        : existingAlert?.resolvedAt || null
   };
 }
 
@@ -669,10 +787,10 @@ async function syncIssueAlerts(context) {
     await prisma.adminIssueAlert.updateMany({
       where: {
         id: { in: staleOrderAlertIds },
-        status: { not: 'Resolved' }
+        status: { not: ISSUE_ALERT_STATUSES.RESOLVED }
       },
       data: {
-        status: 'Resolved',
+        status: ISSUE_ALERT_STATUSES.RESOLVED,
         unread: false,
         resolvedAt: new Date()
       }
@@ -761,10 +879,12 @@ function buildOrderRows(orders, userMap, issueAlerts) {
       amount: Number(order.totalAmount || 0),
       transactionId: buildTransactionId(order.id, 'TXN'),
       phone: customer?.phone || 'N/A',
+      customerPhone: customer?.phone || 'N/A',
+      vendorPhone: vendor?.phone || 'N/A',
       issueSummary:
-        issueAlert && issueAlert.status !== 'Resolved'
+        issueAlert && getIssueStatusLabel(issueAlert.status) !== 'Resolved'
           ? {
-              severity: issueAlert.severity,
+              severity: getIssueSeverityLabel(issueAlert.severity),
               title: issueAlert.issueType,
               summary: issueAlert.summary
             }
@@ -782,24 +902,33 @@ function buildSettlementRows(settlements, userMap) {
     const vendor = userMap.get(settlement.vendorId);
     const dueDate =
       settlement.paidAt ||
+      settlement.failedAt ||
+      settlement.processedAt ||
       new Date(new Date(settlement.createdAt).getTime() + 7 * 24 * 60 * 60 * 1000);
-    const status =
-      settlement.status === 'paid'
-        ? 'Completed'
-        : settlement.status === 'failed'
-          ? 'Failed'
-          : 'Pending';
+    const status = getSettlementStatusLabel(settlement.status);
 
     return {
       id: settlement.id,
       vendor: vendor ? getVendorDisplayName(vendor) : `Vendor ${shortId(settlement.vendorId)}`,
       city: deriveCityFromAddress(getPrimaryAddress(vendor)) || 'Unknown',
       amount: Number(settlement.amount || 0),
+      grossAmount: Number(settlement.grossAmount || settlement.amount || 0),
+      commissionAmount: Number(settlement.commissionAmount || 0),
+      orderCount: Number(settlement.orderCount || 0),
+      periodStart: settlement.periodStart || null,
+      periodEnd: settlement.periodEnd || null,
       status,
       dueDate: toIsoDate(dueDate),
-      transactionId: buildTransactionId(settlement.id, 'SETTLE'),
-      failureReason: status === 'Failed' ? settlement.note || 'Payout transfer failed' : null,
-      createdAt: settlement.createdAt
+      transactionId: settlement.transactionReference || buildTransactionId(settlement.id, 'SETTLE'),
+      vendorPhone: vendor?.phone || 'N/A',
+      failureReason:
+        status === 'Failed' ? settlement.failureReason || settlement.note || 'Payout transfer failed' : null,
+      note: settlement.note || null,
+      processedAt: settlement.processedAt || null,
+      paidAt: settlement.paidAt || null,
+      failedAt: settlement.failedAt || null,
+      createdAt: settlement.createdAt,
+      updatedAt: settlement.updatedAt || settlement.createdAt
     };
   });
 }
@@ -850,9 +979,11 @@ function buildApprovals(vendors) {
 
 function buildFinanceSnapshot(settlementRows) {
   const payoutDueAmount = settlementRows
-    .filter((settlement) => settlement.status === 'Pending')
+    .filter((settlement) => settlement.status === 'Pending' || settlement.status === 'Processing')
     .reduce((sum, settlement) => sum + settlement.amount, 0);
-  const pendingCount = settlementRows.filter((settlement) => settlement.status === 'Pending').length;
+  const pendingCount = settlementRows.filter(
+    (settlement) => settlement.status === 'Pending' || settlement.status === 'Processing'
+  ).length;
   const completedAmount = settlementRows
     .filter((settlement) => settlement.status === 'Completed')
     .reduce((sum, settlement) => sum + settlement.amount, 0);
@@ -864,13 +995,13 @@ function buildFinanceSnapshot(settlementRows) {
       key: 'total_vendor_payout_due',
       title: 'Total Vendor Payout Due',
       value: formatCurrency(payoutDueAmount),
-      description: `${pendingCount} pending settlement${pendingCount === 1 ? '' : 's'} in the payout queue`
+      description: `${pendingCount} pending or processing settlement${pendingCount === 1 ? '' : 's'} in the payout queue`
     },
     {
       key: 'settlements_pending',
       title: 'Settlements Pending',
       value: formatCurrency(payoutDueAmount),
-      description: 'Awaiting finance release or bank confirmation'
+      description: 'Awaiting finance release, bank confirmation or retry'
     },
     {
       key: 'settlements_completed',
@@ -996,13 +1127,16 @@ function buildIssueRecords(issueAlerts, userMap) {
     const customer = issueAlert.customerId ? userMap.get(issueAlert.customerId) : null;
     const vendor = issueAlert.vendorId ? userMap.get(issueAlert.vendorId) : null;
     const vendorRisk = issueAlert.vendorId ? vendorRiskMap.get(issueAlert.vendorId) : null;
+    const issueStatusLabel = getIssueStatusLabel(issueAlert.status);
+    const issueSeverityLabel = getIssueSeverityLabel(issueAlert.severity);
+    const refundStatusLabel = getRefundStatusLabel(issueAlert.refundStatus);
     const hoursOpen = calculateHoursOpen(issueAlert.createdAt, issueAlert.resolvedAt, issueAlert.status);
     const escalationTarget = issueAlert.escalatedTo || defaultEscalationTarget(issueAlert.issueType);
 
     let escalation;
-    if (issueAlert.status === 'Resolved') {
+    if (issueStatusLabel === 'Resolved') {
       escalation = { state: 'resolved', label: 'Resolved' };
-    } else if (issueAlert.status === 'Escalated' || hoursOpen >= issueAlert.autoEscalateAfterHours) {
+    } else if (issueStatusLabel === 'Escalated' || hoursOpen >= issueAlert.autoEscalateAfterHours) {
       escalation = { state: 'active', label: `Escalated to ${escalationTarget}` };
     } else {
       escalation = {
@@ -1016,14 +1150,14 @@ function buildIssueRecords(issueAlerts, userMap) {
       orderId: issueAlert.orderId || buildTransactionId(issueAlert.supportTicketId || issueAlert.id, 'TKT'),
       supportTicketId: issueAlert.supportTicketId || null,
       type: issueAlert.issueType,
-      severity: issueAlert.severity,
+      severity: issueSeverityLabel,
       vendor: vendor ? getVendorDisplayName(vendor) : 'Unassigned',
       vendorPhone: vendor?.phone || 'N/A',
       vendorName: vendor ? getVendorDisplayName(vendor) : 'Unassigned',
       customer: getCustomerDisplayName(customer, issueAlert.customerId),
       customerPhone: customer?.phone || 'N/A',
       city: issueAlert.city || 'Unknown',
-      status: issueAlert.status,
+      status: issueStatusLabel,
       unread: Boolean(issueAlert.unread),
       date: toIsoDate(issueAlert.createdAt),
       hoursOpen,
@@ -1031,7 +1165,7 @@ function buildIssueRecords(issueAlerts, userMap) {
       escalatedTo: issueAlert.escalatedTo || null,
       assignedTo: issueAlert.assignedTo || null,
       rootCause: issueAlert.rootCause || null,
-      refundStatus: issueAlert.refundStatus || 'Not Initiated',
+      refundStatus: refundStatusLabel,
       description: issueAlert.description,
       summary: issueAlert.summary,
       icon: ISSUE_ICON_MAP[issueAlert.issueType] || 'generic',
@@ -1063,7 +1197,23 @@ function filterRows(rows, { range, search, status, vendor, city, date }) {
       (vendor === 'all' || row.vendor === vendor) &&
       (city === 'all' || row.city === city) &&
       matchesSearch(
-        [row.id, row.customer, row.vendor, row.city, row.phone, row.transactionId, row.location],
+        [
+          row.id,
+          row.customer,
+          row.vendor,
+          row.city,
+          row.phone,
+          row.customerPhone,
+          row.vendorPhone,
+          row.transactionId,
+          row.location,
+          row.paymentStatus,
+          row.orderType,
+          row.pickupSlot,
+          row.deliveryEta,
+          row.issueSummary?.title,
+          row.failureReason
+        ],
         search
       )
     );
@@ -1074,6 +1224,7 @@ function buildKpiCards(adminRole, filteredOrders, filteredSettlements, filteredI
   const paidOrders = filteredOrders.filter((order) => order.paymentStatus === 'Paid');
   const selectedRevenue = paidOrders.reduce((sum, order) => sum + order.amount, 0);
   const avgOrderValue = paidOrders.length === 0 ? 0 : selectedRevenue / paidOrders.length;
+  const delayedOrders = filteredOrders.filter((order) => order.status === 'Pickup Delayed').length;
   const pendingOrders = filteredOrders.filter((order) =>
     ['Pending', 'Processing', 'Out for Delivery', 'Pickup Delayed', 'Issue Reported'].includes(order.status)
   ).length;
@@ -1084,7 +1235,7 @@ function buildKpiCards(adminRole, filteredOrders, filteredSettlements, filteredI
     .filter((order) => order.paymentStatus === 'Paid')
     .reduce((sum, order) => sum + Number(order.commissionAmount || 0), 0);
   const payoutDueAmount = allSettlements
-    .filter((settlement) => settlement.status === 'Pending')
+    .filter((settlement) => settlement.status === 'Pending' || settlement.status === 'Processing')
     .reduce((sum, settlement) => sum + settlement.amount, 0);
   const settlementsCompletedAmount = filteredSettlements
     .filter((settlement) => settlement.status === 'Completed')
@@ -1111,6 +1262,13 @@ function buildKpiCards(adminRole, filteredOrders, filteredSettlements, filteredI
       value: pendingOrders,
       accent: 'amber',
       note: 'Needs action'
+    },
+    delayCount: {
+      key: 'pickup_delay_count',
+      title: 'Pickup Delays',
+      value: delayedOrders,
+      accent: 'orange',
+      note: 'Orders breaching pickup SLA'
     },
     issueCount: {
       key: 'issue_reported_count',
@@ -1164,7 +1322,7 @@ function buildKpiCards(adminRole, filteredOrders, filteredSettlements, filteredI
   };
 
   if (adminRole === ADMIN_ROLES.OPERATIONS_ADMIN) {
-    return [cards.ordersPeriod, cards.pendingOrders, cards.issueCount, cards.avgOrderValue];
+    return [cards.ordersPeriod, cards.delayCount, cards.pendingOrders, cards.issueCount];
   }
 
   if (adminRole === ADMIN_ROLES.FINANCE_ADMIN) {
@@ -1187,19 +1345,20 @@ function buildKpiCards(adminRole, filteredOrders, filteredSettlements, filteredI
 function buildIssueStats(issueRecords, orderRows) {
   const currentMonthRange = getPeriodRange('this_month');
   const monthOrders = orderRows.filter((order) => isWithinRange(order.createdAt, currentMonthRange));
+  const monthIssues = issueRecords.filter((issue) => isWithinRange(issue.createdAt, currentMonthRange));
   const grossRevenue = monthOrders
     .filter((order) => order.paymentStatus === 'Paid')
     .reduce((sum, order) => sum + order.amount, 0);
-  const damageIssues = issueRecords.filter((issue) => issue.type === 'Item Damaged').length;
-  const noShowIssues = issueRecords.filter((issue) => issue.type === 'Customer No-Show').length;
-  const refundExposure = issueRecords.reduce((sum, issue) => sum + issue.financialRisk.amount, 0);
-  const resolvedIssues = issueRecords.filter((issue) => issue.status === 'Resolved' && issue.hoursOpen > 0);
+  const damageIssues = monthIssues.filter((issue) => issue.type === 'Item Damaged').length;
+  const noShowIssues = monthIssues.filter((issue) => issue.type === 'Customer No-Show').length;
+  const refundExposure = monthIssues.reduce((sum, issue) => sum + issue.financialRisk.amount, 0);
+  const resolvedIssues = monthIssues.filter((issue) => issue.status === 'Resolved' && issue.hoursOpen > 0);
   const avgResolution = resolvedIssues.length === 0
-    ? issueRecords.reduce((sum, issue) => sum + issue.hoursOpen, 0) / Math.max(issueRecords.length, 1)
+    ? monthIssues.reduce((sum, issue) => sum + issue.hoursOpen, 0) / Math.max(monthIssues.length, 1)
     : resolvedIssues.reduce((sum, issue) => sum + issue.hoursOpen, 0) / resolvedIssues.length;
 
   const vendorIssueMap = new Map();
-  issueRecords.forEach((issue) => {
+  monthIssues.forEach((issue) => {
     vendorIssueMap.set(issue.vendor, (vendorIssueMap.get(issue.vendor) || 0) + 1);
   });
 
@@ -1276,7 +1435,22 @@ async function getDashboardOverview({
   const filteredIssues = issueRecords.filter((issue) => {
     return (
       isWithinRange(issue.createdAt, range) &&
-      matchesSearch([issue.orderId, issue.vendor, issue.customer, issue.city, issue.type], search) &&
+      matchesSearch(
+        [
+          issue.orderId,
+          issue.supportTicketId,
+          issue.vendor,
+          issue.vendorPhone,
+          issue.customer,
+          issue.customerPhone,
+          issue.city,
+          issue.type,
+          issue.summary,
+          issue.description,
+          issue.assignedTo
+        ],
+        search
+      ) &&
       (status === 'all' || issue.status === status) &&
       (vendor === 'all' || issue.vendor === vendor) &&
       (city === 'all' || issue.city === city) &&
@@ -1348,7 +1522,13 @@ async function getIssues({
   type = 'all',
   status = 'all',
   severity = 'all',
-  dateRange = 'all'
+  dateRange = 'all',
+  startDate,
+  endDate,
+  date = '',
+  assignedTo = 'all',
+  rootCause = 'all',
+  refundStatus = 'all'
 }) {
   const context = await getBaseContext();
 
@@ -1360,19 +1540,38 @@ async function getIssues({
 
   const orderRows = buildOrderRows(context.orders, context.userMap, latestAlerts);
   const issueRecords = buildIssueRecords(latestAlerts, context.userMap);
-  const range = dateRange === 'all' ? null : getPeriodRange(dateRange);
+  const range = getIssueDateRange(dateRange, startDate, endDate);
 
   const filteredIssues = issueRecords.filter((issue) => {
     const matchesDate = range ? isWithinRange(issue.createdAt, range) : true;
 
     return (
       matchesDate &&
-      matchesSearch([issue.orderId, issue.vendor, issue.customer, issue.city, issue.type], search) &&
+      (!date || issue.date === date) &&
+      matchesSearch(
+        [
+          issue.orderId,
+          issue.supportTicketId,
+          issue.vendor,
+          issue.vendorPhone,
+          issue.customer,
+          issue.customerPhone,
+          issue.city,
+          issue.type,
+          issue.summary,
+          issue.description,
+          issue.assignedTo
+        ],
+        search
+      ) &&
       (city === 'all' || issue.city === city) &&
       (vendor === 'all' || issue.vendor === vendor) &&
       (type === 'all' || issue.type === type) &&
       (status === 'all' || issue.status === status) &&
-      (severity === 'all' || issue.severity === severity)
+      (severity === 'all' || issue.severity === severity) &&
+      (assignedTo === 'all' || issue.assignedTo === assignedTo) &&
+      (rootCause === 'all' || issue.rootCause === rootCause) &&
+      (refundStatus === 'all' || issue.refundStatus === refundStatus)
     );
   });
 
@@ -1386,7 +1585,8 @@ async function getIssues({
       statuses: uniqueValues(issueRecords.map((issue) => issue.status)),
       severities: uniqueValues(issueRecords.map((issue) => issue.severity)),
       rootCauses: ROOT_CAUSES,
-      teamMembers: TEAM_MEMBERS
+      teamMembers: TEAM_MEMBERS,
+      refundStatuses: REFUND_STATUSES
     },
     issues: filteredIssues,
     summaryCards: stats.summaryCards,
@@ -1413,19 +1613,70 @@ async function updateIssue(issueId, payload = {}) {
 
   if (!currentIssue) return null;
 
+  const hasAssignedTo = Object.prototype.hasOwnProperty.call(payload, 'assignedTo');
+  const hasRootCause = Object.prototype.hasOwnProperty.call(payload, 'rootCause');
+  const hasRefundStatus = Object.prototype.hasOwnProperty.call(payload, 'refundStatus');
+  const hasDamageClaim = Object.prototype.hasOwnProperty.call(payload, 'damageClaim');
+  const damageClaimPayload = buildJsonObject(payload.damageClaim);
   const nextDamageClaim = {
     ...(normalizeDamageClaim(currentIssue.damageClaim) || {}),
-    ...buildJsonObject(payload.damageClaim)
+    ...damageClaimPayload
   };
+
+  if (damageClaimPayload.damageImageFile) {
+    const damageImageAsset = await persistIssueClaimImage(
+      issueId,
+      'damage',
+      damageClaimPayload.damageImageFile
+    );
+    nextDamageClaim.damageImageUploaded = true;
+    nextDamageClaim.damageImageUrl = damageImageAsset.url;
+    nextDamageClaim.damageImageName = damageImageAsset.name;
+  }
+
+  if (damageClaimPayload.preCleanImageFile) {
+    const preCleanImageAsset = await persistIssueClaimImage(
+      issueId,
+      'pre-clean',
+      damageClaimPayload.preCleanImageFile
+    );
+    nextDamageClaim.preCleanImageUploaded = true;
+    nextDamageClaim.preCleanImageUrl = preCleanImageAsset.url;
+    nextDamageClaim.preCleanImageName = preCleanImageAsset.name;
+  }
+
+  delete nextDamageClaim.damageImageFile;
+  delete nextDamageClaim.preCleanImageFile;
 
   const data = {
     unread: false,
     reviewedAt: new Date()
   };
 
+  if (hasAssignedTo) {
+    data.assignedTo = payload.assignedTo || null;
+  }
+
+  if (hasRootCause) {
+    data.rootCause = payload.rootCause || null;
+  }
+
+  if (hasRefundStatus) {
+    data.refundStatus = getRefundStatusValue(
+      payload.refundStatus || currentIssue.refundStatus || ISSUE_REFUND_STATUSES.NOT_INITIATED
+    );
+  }
+
+  if (hasDamageClaim) {
+    data.damageClaim = nextDamageClaim;
+  }
+
   if (payload.action === 'assign' && payload.assignedTo) {
     data.assignedTo = payload.assignedTo;
-    data.status = currentIssue.status === 'Open' ? 'Investigating' : currentIssue.status;
+    data.status =
+      getIssueStatusValue(currentIssue.status) === ISSUE_ALERT_STATUSES.OPEN
+        ? ISSUE_ALERT_STATUSES.INVESTIGATING
+        : currentIssue.status;
   }
 
   if (payload.action === 'review') {
@@ -1433,15 +1684,17 @@ async function updateIssue(issueId, payload = {}) {
   }
 
   if (payload.action === 'escalate') {
-    data.status = 'Escalated';
+    data.status = ISSUE_ALERT_STATUSES.ESCALATED;
     data.escalatedTo =
       payload.escalatedTo || currentIssue.escalatedTo || defaultEscalationTarget(currentIssue.issueType);
   }
 
   if (payload.action === 'resolve') {
-    data.status = 'Resolved';
+    data.status = ISSUE_ALERT_STATUSES.RESOLVED;
     data.rootCause = payload.rootCause || currentIssue.rootCause;
-    data.refundStatus = payload.refundStatus || currentIssue.refundStatus || 'Not Initiated';
+    data.refundStatus = getRefundStatusValue(
+      payload.refundStatus || currentIssue.refundStatus || ISSUE_REFUND_STATUSES.NOT_INITIATED
+    );
     data.assignedTo = payload.assignedTo || currentIssue.assignedTo;
     data.resolvedAt = new Date();
     data.damageClaim = nextDamageClaim;
@@ -1451,6 +1704,31 @@ async function updateIssue(issueId, payload = {}) {
     where: { id: issueId },
     data
   });
+
+  const shouldMoveTicketToInProgress =
+    currentIssue.supportTicketId &&
+    payload.action !== 'resolve' &&
+    (payload.action === 'assign' ||
+      payload.action === 'escalate' ||
+      hasAssignedTo ||
+      hasRootCause ||
+      hasRefundStatus ||
+      hasDamageClaim);
+
+  if (shouldMoveTicketToInProgress) {
+    await prisma.supportTicket
+      .update({
+        where: { id: currentIssue.supportTicketId },
+        data: {
+          status: 'in_progress',
+          isEscalated:
+            payload.action === 'escalate'
+              ? true
+              : getIssueStatusValue(currentIssue.status) === ISSUE_ALERT_STATUSES.ESCALATED
+        }
+      })
+      .catch(() => null);
+  }
 
   if (payload.action === 'escalate' && currentIssue.supportTicketId) {
     await prisma.supportTicket

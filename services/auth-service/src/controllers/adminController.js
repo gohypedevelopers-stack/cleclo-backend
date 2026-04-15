@@ -1,6 +1,14 @@
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
+function normalizeSettlementStatus(status) {
+    const normalized = String(status || '').trim().toLowerCase();
+    if (normalized === 'processing') return 'processing';
+    if (normalized === 'paid') return 'paid';
+    if (normalized === 'failed') return 'failed';
+    return 'pending';
+}
+
 // ============================================
 // USER MANAGEMENT
 // ============================================
@@ -292,7 +300,12 @@ const getVendorPayouts = async (req, res) => {
             where: { vendorId: id },
             orderBy: { createdAt: 'desc' }
         });
-        res.json(settlements);
+        res.json(
+            settlements.map((settlement) => ({
+                ...settlement,
+                status: normalizeSettlementStatus(settlement.status)
+            }))
+        );
     } catch (error) {
         res.status(500).json({ error: error.message });
     }

@@ -5,6 +5,98 @@ const {
     updateIssue
 } = require('../data/adminDashboardData');
 
+const ISSUE_ACTIONS = new Set(['assign', 'review', 'escalate', 'resolve']);
+const ROOT_CAUSES = new Set(['Vendor Fault', 'Rider Fault', 'Customer Fault', 'System Issue']);
+const TEAM_MEMBERS = new Set([
+    'Operations Head',
+    'Claims Desk',
+    'Customer Success',
+    'Dispatch Team',
+    'Finance Ops',
+    'Platform Reliability',
+    'Super Admin'
+]);
+const REFUND_STATUSES = new Set(['Not Initiated', 'Processing', 'Completed']);
+const ESCALATION_TARGETS = new Set(['Operations Head', 'Super Admin']);
+const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/webp']);
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+
+function isValidDate(value) {
+    return Boolean(value) && !Number.isNaN(new Date(value).getTime());
+}
+
+function validateDateRange(startDate, endDate) {
+    if (!startDate && !endDate) return null;
+    if (!startDate || !endDate) {
+        return 'Custom date range requires both startDate and endDate.';
+    }
+    if (!isValidDate(startDate) || !isValidDate(endDate)) {
+        return 'Custom date range must use valid ISO dates.';
+    }
+    if (new Date(startDate) > new Date(endDate)) {
+        return 'Custom date range endDate cannot be earlier than startDate.';
+    }
+    return null;
+}
+
+function validateClaimFile(filePayload, fieldName) {
+    if (!filePayload) return null;
+    if (typeof filePayload !== 'object' || Array.isArray(filePayload)) {
+        return `${fieldName} must be an object payload.`;
+    }
+
+    const { name, type, data } = filePayload;
+    if (!name || !type || !data) {
+        return `${fieldName} must include name, type and data.`;
+    }
+    if (!ALLOWED_IMAGE_TYPES.has(type)) {
+        return `${fieldName} only supports JPG, PNG and WEBP images.`;
+    }
+    if (!String(data).startsWith(`data:${type};base64,`)) {
+        return `${fieldName} must be a valid base64 data URL.`;
+    }
+
+    try {
+        const rawPayload = String(data).split(',')[1] || '';
+        const fileBuffer = Buffer.from(rawPayload, 'base64');
+        if (!fileBuffer.length) {
+            return `${fieldName} cannot be empty.`;
+        }
+        if (fileBuffer.length > MAX_IMAGE_BYTES) {
+            return `${fieldName} exceeds the 5 MB limit.`;
+        }
+    } catch {
+        return `${fieldName} contains invalid base64 data.`;
+    }
+
+    return null;
+}
+
+function validateDamageClaimPayload(damageClaim) {
+    if (damageClaim == null) return null;
+    if (typeof damageClaim !== 'object' || Array.isArray(damageClaim)) {
+        return 'damageClaim must be an object.';
+    }
+
+    const numericFields = ['invoiceValue', 'liabilityCap'];
+    for (const field of numericFields) {
+        if (damageClaim[field] != null) {
+            const value = Number(damageClaim[field]);
+            if (!Number.isFinite(value) || value < 0) {
+                return `${field} must be a non-negative number.`;
+            }
+        }
+    }
+
+    const damageImageError = validateClaimFile(damageClaim.damageImageFile, 'damageImageFile');
+    if (damageImageError) return damageImageError;
+
+    const preCleanImageError = validateClaimFile(damageClaim.preCleanImageFile, 'preCleanImageFile');
+    if (preCleanImageError) return preCleanImageError;
+
+    return null;
+}
+
 const getDashboardOverviewHandler = async (req, res) => {
     try {
         const payload = await getDashboardOverview({
@@ -27,6 +119,11 @@ const getDashboardOverviewHandler = async (req, res) => {
 
 const getIssueAlertsHandler = async (req, res) => {
     try {
+        const dateRangeError = validateDateRange(req.query.startDate, req.query.endDate);
+        if (dateRangeError) {
+            return res.status(400).json({ message: dateRangeError });
+        }
+
         const payload = await getIssues({
             search: req.query.search,
             city: req.query.city,
@@ -34,7 +131,13 @@ const getIssueAlertsHandler = async (req, res) => {
             type: req.query.type,
             status: req.query.status,
             severity: req.query.severity,
-            dateRange: req.query.dateRange
+            dateRange: req.query.dateRange,
+            startDate: req.query.startDate,
+            endDate: req.query.endDate,
+            date: req.query.date,
+            assignedTo: req.query.assignedTo,
+            rootCause: req.query.rootCause,
+            refundStatus: req.query.refundStatus
         });
 
         res.json(payload);
@@ -54,6 +157,35 @@ const markAllIssuesReviewedHandler = async (req, res) => {
 
 const updateIssueAlertHandler = async (req, res) => {
     try {
+        if (req.body.action && !ISSUE_ACTIONS.has(req.body.action)) {
+            return res.status(400).json({ message: 'Unsupported issue action' });
+        }
+
+        if (req.body.assignedTo && !TEAM_MEMBERS.has(req.body.assignedTo)) {
+            return res.status(400).json({ message: 'Assigned team member is not supported' });
+        }
+
+        if (req.body.action === 'assign' && !req.body.assignedTo) {
+            return res.status(400).json({ message: 'assignedTo is required when assigning an issue' });
+        }
+
+        if (req.body.escalatedTo && !ESCALATION_TARGETS.has(req.body.escalatedTo)) {
+            return res.status(400).json({ message: 'Escalation target is not supported' });
+        }
+
+        if (req.body.rootCause && !ROOT_CAUSES.has(req.body.rootCause)) {
+            return res.status(400).json({ message: 'Root cause is not supported' });
+        }
+
+        if (req.body.refundStatus && !REFUND_STATUSES.has(req.body.refundStatus)) {
+            return res.status(400).json({ message: 'Refund status is not supported' });
+        }
+
+        const damageClaimError = validateDamageClaimPayload(req.body.damageClaim);
+        if (damageClaimError) {
+            return res.status(400).json({ message: damageClaimError });
+        }
+
         if (req.body.action === 'resolve' && !req.body.rootCause) {
             return res.status(400).json({ message: 'Root cause is required to resolve an issue' });
         }

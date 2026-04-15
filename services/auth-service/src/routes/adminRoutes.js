@@ -146,6 +146,11 @@ router.post(
   settlementController.createSettlement
 );
 router.patch(
+  '/settlements/:id',
+  authorizeAdminRoles(ADMIN_ROLES.SUPER_ADMIN, ADMIN_ROLES.FINANCE_ADMIN),
+  settlementController.updateSettlement
+);
+router.patch(
   '/settlements/:id/paid',
   authorizeAdminRoles(ADMIN_ROLES.SUPER_ADMIN, ADMIN_ROLES.FINANCE_ADMIN),
   settlementController.markSettlementPaid

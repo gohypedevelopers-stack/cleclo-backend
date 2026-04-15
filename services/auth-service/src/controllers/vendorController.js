@@ -1,6 +1,14 @@
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
+function normalizeSettlementStatus(status) {
+    const normalized = String(status || '').trim().toLowerCase();
+    if (normalized === 'processing') return 'processing';
+    if (normalized === 'paid') return 'paid';
+    if (normalized === 'failed') return 'failed';
+    return 'pending';
+}
+
 // Get vendor dashboard stats
 const getDashboardStats = async (req, res) => {
     try {
@@ -22,13 +30,13 @@ const getDashboardStats = async (req, res) => {
 
         // Get pending settlements total
         const pendingEarnings = await prisma.vendorSettlement.aggregate({
-            where: { vendorId, status: 'pending' },
+            where: { vendorId, status: 'PENDING' },
             _sum: { amount: true }
         });
 
         // Get paid settlements total
         const totalEarnings = await prisma.vendorSettlement.aggregate({
-            where: { vendorId, status: 'paid' },
+            where: { vendorId, status: 'PAID' },
             _sum: { amount: true }
         });
 
@@ -58,7 +66,7 @@ const getEarnings = async (req, res) => {
         }
 
         const where = { vendorId };
-        if (status) where.status = status;
+        if (status) where.status = String(status).trim().toUpperCase();
         if (startDate || endDate) {
             where.createdAt = {};
             if (startDate) where.createdAt.gte = new Date(startDate);
@@ -79,9 +87,12 @@ const getEarnings = async (req, res) => {
         });
 
         res.json({
-            earnings,
+            earnings: earnings.map((earning) => ({
+                ...earning,
+                status: normalizeSettlementStatus(earning.status)
+            })),
             summary: totals.reduce((acc, t) => {
-                acc[t.status] = { amount: t._sum.amount, count: t._count };
+                acc[normalizeSettlementStatus(t.status)] = { amount: t._sum.amount, count: t._count };
                 return acc;
             }, {})
         });

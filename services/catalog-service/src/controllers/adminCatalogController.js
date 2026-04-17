@@ -10,12 +10,18 @@ const getAllServices = async (req, res) => {
         const services = await prisma.service.findMany({
             include: {
                 categories: {
-                    orderBy: { order: 'asc' },
+                    orderBy: { displayOrder: 'asc' },
                     include: {
-                        items: true
+                        subCategories: {
+                            orderBy: { displayOrder: 'asc' },
+                            include: {
+                                items: true
+                            }
+                        }
                     }
                 }
-            }
+            },
+            orderBy: { displayOrder: 'asc' }
         });
         res.json(services);
     } catch (error) {
@@ -25,9 +31,17 @@ const getAllServices = async (req, res) => {
 
 const createService = async (req, res) => {
     try {
-        const { name, slug } = req.body;
+        const { name, slug, description, icon, displayOrder, isActive } = req.body;
         const service = await prisma.service.create({
-            data: { name, slug: slug || name.toLowerCase().replace(/\s+/g, '-') }
+            data: { 
+                name, 
+                slug: slug || name.toLowerCase().replace(/\s+/g, '-'),
+                description,
+                icon,
+                displayOrder: displayOrder || 0,
+                isActive: isActive !== undefined ? isActive : true,
+                createdByAdminId: req.admin?.userId
+            }
         });
         res.status(201).json(service);
     } catch (error) {
@@ -38,10 +52,13 @@ const createService = async (req, res) => {
 const updateService = async (req, res) => {
     try {
         const { id } = req.params;
-        const { name, slug } = req.body;
+        const { name, slug, description, icon, displayOrder, isActive } = req.body;
         const service = await prisma.service.update({
             where: { id },
-            data: { name, slug }
+            data: { 
+                name, slug, description, icon, displayOrder, isActive,
+                updatedByAdminId: req.admin?.userId
+            }
         });
         res.json(service);
     } catch (error) {
@@ -52,16 +69,24 @@ const updateService = async (req, res) => {
 const deleteService = async (req, res) => {
     try {
         const { id } = req.params;
-        // First delete all items in all categories
-        await prisma.item.deleteMany({
-            where: { category: { serviceId: id } }
-        });
-        // Then delete all categories
-        await prisma.category.deleteMany({
-            where: { serviceId: id }
-        });
+        // Due to cascading relations handled manually:
+        // Find categories
+        const categories = await prisma.category.findMany({ where: { serviceId: id } });
+        const catIds = categories.map(c => c.id);
+        
+        // Find subcategories
+        const subCategories = await prisma.subCategory.findMany({ where: { categoryId: { in: catIds } } });
+        const subCatIds = subCategories.map(sc => sc.id);
+
+        // Delete items
+        await prisma.item.deleteMany({ where: { subCategoryId: { in: subCatIds } } });
+        // Delete subcategories
+        await prisma.subCategory.deleteMany({ where: { categoryId: { in: catIds } } });
+        // Delete categories
+        await prisma.category.deleteMany({ where: { serviceId: id } });
         // Finally delete service
         await prisma.service.delete({ where: { id } });
+        
         res.json({ message: 'Service deleted' });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -78,8 +103,8 @@ const getAllCategories = async (req, res) => {
         const where = serviceId ? { serviceId } : {};
         const categories = await prisma.category.findMany({
             where,
-            include: { items: true, service: true },
-            orderBy: { order: 'asc' }
+            include: { subCategories: true, service: true },
+            orderBy: { displayOrder: 'asc' }
         });
         res.json(categories);
     } catch (error) {
@@ -89,9 +114,14 @@ const getAllCategories = async (req, res) => {
 
 const createCategory = async (req, res) => {
     try {
-        const { serviceId, name, order } = req.body;
+        const { serviceId, name, icon, displayOrder, isActive } = req.body;
         const category = await prisma.category.create({
-            data: { serviceId, name, order: order || 0 }
+            data: { 
+                serviceId, name, icon, 
+                displayOrder: displayOrder || 0,
+                isActive: isActive !== undefined ? isActive : true,
+                createdByAdminId: req.admin?.userId
+            }
         });
         res.status(201).json(category);
     } catch (error) {
@@ -102,10 +132,13 @@ const createCategory = async (req, res) => {
 const updateCategory = async (req, res) => {
     try {
         const { id } = req.params;
-        const { name, order } = req.body;
+        const { name, icon, displayOrder, isActive } = req.body;
         const category = await prisma.category.update({
             where: { id },
-            data: { name, order }
+            data: { 
+                name, icon, displayOrder, isActive,
+                updatedByAdminId: req.admin?.userId
+            }
         });
         res.json(category);
     } catch (error) {
@@ -116,10 +149,13 @@ const updateCategory = async (req, res) => {
 const deleteCategory = async (req, res) => {
     try {
         const { id } = req.params;
-        // First delete all items
-        await prisma.item.deleteMany({ where: { categoryId: id } });
-        // Then delete category
+        const subCategories = await prisma.subCategory.findMany({ where: { categoryId: id } });
+        const subCatIds = subCategories.map(sc => sc.id);
+
+        await prisma.item.deleteMany({ where: { subCategoryId: { in: subCatIds } } });
+        await prisma.subCategory.deleteMany({ where: { categoryId: id } });
         await prisma.category.delete({ where: { id } });
+        
         res.json({ message: 'Category deleted' });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -128,16 +164,80 @@ const deleteCategory = async (req, res) => {
 
 const reorderCategories = async (req, res) => {
     try {
-        const { categories } = req.body; // [{id, order}, ...]
+        const { categories } = req.body; // [{id, displayOrder}, ...]
         await Promise.all(
             categories.map(c =>
                 prisma.category.update({
                     where: { id: c.id },
-                    data: { order: c.order }
+                    data: { displayOrder: c.displayOrder }
                 })
             )
         );
         res.json({ message: 'Categories reordered' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+// ============================================
+// SUBCATEGORIES CRUD
+// ============================================
+
+const getAllSubCategories = async (req, res) => {
+    try {
+        const { categoryId } = req.query;
+        const where = categoryId ? { categoryId } : {};
+        const subCategories = await prisma.subCategory.findMany({
+            where,
+            include: { items: true, category: true },
+            orderBy: { displayOrder: 'asc' }
+        });
+        res.json(subCategories);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+const createSubCategory = async (req, res) => {
+    try {
+        const { categoryId, name, displayOrder, isActive } = req.body;
+        const subCategory = await prisma.subCategory.create({
+            data: { 
+                categoryId, name, 
+                displayOrder: displayOrder || 0,
+                isActive: isActive !== undefined ? isActive : true,
+                createdByAdminId: req.admin?.userId
+            }
+        });
+        res.status(201).json(subCategory);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+const updateSubCategory = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { name, displayOrder, isActive } = req.body;
+        const subCategory = await prisma.subCategory.update({
+            where: { id },
+            data: { 
+                name, displayOrder, isActive,
+                updatedByAdminId: req.admin?.userId
+            }
+        });
+        res.json(subCategory);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+const deleteSubCategory = async (req, res) => {
+    try {
+        const { id } = req.params;
+        await prisma.item.deleteMany({ where: { subCategoryId: id } });
+        await prisma.subCategory.delete({ where: { id } });
+        res.json({ message: 'Subcategory deleted' });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -149,11 +249,11 @@ const reorderCategories = async (req, res) => {
 
 const getAllItems = async (req, res) => {
     try {
-        const { categoryId } = req.query;
-        const where = categoryId ? { categoryId } : {};
+        const { subCategoryId } = req.query;
+        const where = subCategoryId ? { subCategoryId } : {};
         const items = await prisma.item.findMany({
             where,
-            include: { category: { include: { service: true } } }
+            include: { subCategory: { include: { category: true } } }
         });
         res.json(items);
     } catch (error) {
@@ -163,9 +263,18 @@ const getAllItems = async (req, res) => {
 
 const createItem = async (req, res) => {
     try {
-        const { categoryId, name, basePrice, imageUrl } = req.body;
+        const { subCategoryId, name, skuCode, customerPrice, vendorShare, imageUrl, isActive } = req.body;
         const item = await prisma.item.create({
-            data: { categoryId, name, basePrice: parseFloat(basePrice), imageUrl }
+            data: { 
+                subCategoryId, 
+                name, 
+                skuCode,
+                customerPrice: parseFloat(customerPrice || 0), 
+                vendorShare: parseFloat(vendorShare || 0),
+                imageUrl,
+                isActive: isActive !== undefined ? isActive : true,
+                createdByAdminId: req.admin?.userId
+            }
         });
         res.status(201).json(item);
     } catch (error) {
@@ -176,12 +285,16 @@ const createItem = async (req, res) => {
 const updateItem = async (req, res) => {
     try {
         const { id } = req.params;
-        const { name, basePrice, imageUrl, categoryId } = req.body;
-        const data = {};
+        const { name, skuCode, customerPrice, vendorShare, imageUrl, subCategoryId, isActive } = req.body;
+        const data = { updatedByAdminId: req.admin?.userId };
+        
         if (name !== undefined) data.name = name;
-        if (basePrice !== undefined) data.basePrice = parseFloat(basePrice);
+        if (skuCode !== undefined) data.skuCode = skuCode;
+        if (customerPrice !== undefined) data.customerPrice = parseFloat(customerPrice);
+        if (vendorShare !== undefined) data.vendorShare = parseFloat(vendorShare);
         if (imageUrl !== undefined) data.imageUrl = imageUrl;
-        if (categoryId !== undefined) data.categoryId = categoryId;
+        if (subCategoryId !== undefined) data.subCategoryId = subCategoryId;
+        if (isActive !== undefined) data.isActive = isActive;
 
         const item = await prisma.item.update({ where: { id }, data });
         res.json(item);
@@ -201,18 +314,22 @@ const deleteItem = async (req, res) => {
 };
 
 module.exports = {
-    // Services
     getAllServices,
     createService,
     updateService,
     deleteService,
-    // Categories
+    
     getAllCategories,
     createCategory,
     updateCategory,
     deleteCategory,
     reorderCategories,
-    // Items
+
+    getAllSubCategories,
+    createSubCategory,
+    updateSubCategory,
+    deleteSubCategory,
+    
     getAllItems,
     createItem,
     updateItem,

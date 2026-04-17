@@ -4,10 +4,22 @@ const prisma = new PrismaClient();
 const getServices = async (req, res) => {
     try {
         const services = await prisma.service.findMany({
+            where: { isActive: true },
+            orderBy: { displayOrder: 'asc' },
             include: {
                 categories: {
+                    where: { isActive: true },
+                    orderBy: { displayOrder: 'asc' },
                     include: {
-                        items: true
+                        subCategories: {
+                            where: { isActive: true },
+                            orderBy: { displayOrder: 'asc' },
+                            include: {
+                                items: {
+                                    where: { isActive: true }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -23,11 +35,22 @@ const getInputData = async (req, res) => {
     try {
         // Optimized hierarchical fetch
         const services = await prisma.service.findMany({
+            where: { isActive: true },
+            orderBy: { displayOrder: 'asc' },
             include: {
                 categories: {
-                    orderBy: { order: 'asc' },
+                    where: { isActive: true },
+                    orderBy: { displayOrder: 'asc' },
                     include: {
-                        items: true
+                        subCategories: {
+                            where: { isActive: true },
+                            orderBy: { displayOrder: 'asc' },
+                            include: {
+                                items: {
+                                    where: { isActive: true }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -39,10 +62,25 @@ const getInputData = async (req, res) => {
     }
 };
 
+const getItemsByIds = async (req, res) => {
+    try {
+        const { itemIds } = req.body;
+        if (!Array.isArray(itemIds)) {
+            return res.status(400).json({ message: 'itemIds must be an array' });
+        }
+        const items = await prisma.item.findMany({
+            where: { id: { in: itemIds } }
+        });
+        res.json(items);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
 const createService = async (req, res) => {
     try {
         const { name, slug } = req.body;
-        const service = await prisma.service.create({ data: { name, slug } });
+        const service = await prisma.service.create({ data: { name, slug: slug || name.toLowerCase().replace(/\s+/g, '-') } });
         res.json(service);
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -51,8 +89,8 @@ const createService = async (req, res) => {
 
 const createCategory = async (req, res) => {
     try {
-        const { serviceId, name, order } = req.body;
-        const category = await prisma.category.create({ data: { serviceId, name, order } });
+        const { serviceId, name, displayOrder } = req.body;
+        const category = await prisma.category.create({ data: { serviceId, name, displayOrder: displayOrder || 0 } });
         res.json(category);
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -61,8 +99,8 @@ const createCategory = async (req, res) => {
 
 const createItem = async (req, res) => {
     try {
-        const { categoryId, name, basePrice, imageUrl } = req.body;
-        const item = await prisma.item.create({ data: { categoryId, name, basePrice, imageUrl } });
+        const { subCategoryId, name, customerPrice, imageUrl } = req.body;
+        const item = await prisma.item.create({ data: { subCategoryId, name, customerPrice, imageUrl } });
         res.json(item);
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -72,6 +110,7 @@ const createItem = async (req, res) => {
 module.exports = {
     getServices,
     getInputData,
+    getItemsByIds,
     createService,
     createCategory,
     createItem

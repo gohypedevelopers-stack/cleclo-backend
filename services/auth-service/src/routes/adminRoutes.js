@@ -82,6 +82,8 @@ router.get(
 // ============================================
 // WALLET MANAGEMENT
 // ============================================
+const adminWalletConfigController = require('../controllers/adminWalletConfigController');
+
 router.get(
   '/users/:id/wallet',
   authorizeAdminRoles(ADMIN_ROLES.SUPER_ADMIN, ADMIN_ROLES.FINANCE_ADMIN),
@@ -92,6 +94,26 @@ router.post(
   authorizeAdminRoles(ADMIN_ROLES.SUPER_ADMIN, ADMIN_ROLES.FINANCE_ADMIN),
   adminController.adjustWallet
 );
+
+// Wallet Config
+router.get('/wallet/config', authorizeAdminRoles(ADMIN_ROLES.SUPER_ADMIN, ADMIN_ROLES.FINANCE_ADMIN), adminWalletConfigController.getPlatformConfig);
+router.put('/wallet/config', authorizeAdminRoles(ADMIN_ROLES.SUPER_ADMIN, ADMIN_ROLES.FINANCE_ADMIN), adminWalletConfigController.updatePlatformConfig);
+
+// Reward Rules
+router.get('/wallet/rewards', authorizeAdminRoles(ADMIN_ROLES.SUPER_ADMIN, ADMIN_ROLES.FINANCE_ADMIN), adminWalletConfigController.getRewardRules);
+router.post('/wallet/rewards', authorizeAdminRoles(ADMIN_ROLES.SUPER_ADMIN, ADMIN_ROLES.FINANCE_ADMIN), adminWalletConfigController.createRewardRule);
+router.put('/wallet/rewards/:id', authorizeAdminRoles(ADMIN_ROLES.SUPER_ADMIN, ADMIN_ROLES.FINANCE_ADMIN), adminWalletConfigController.updateRewardRule);
+router.delete('/wallet/rewards/:id', authorizeAdminRoles(ADMIN_ROLES.SUPER_ADMIN, ADMIN_ROLES.FINANCE_ADMIN), adminWalletConfigController.deleteRewardRule);
+
+// ============================================
+// REFERRAL CAMPAIGNS
+// ============================================
+const adminReferralController = require('../controllers/adminReferralCampaignController');
+
+router.get('/referrals/campaigns', authorizeAdminRoles(ADMIN_ROLES.SUPER_ADMIN, ADMIN_ROLES.FINANCE_ADMIN), adminReferralController.getAllCampaigns);
+router.post('/referrals/campaigns', authorizeAdminRoles(ADMIN_ROLES.SUPER_ADMIN, ADMIN_ROLES.FINANCE_ADMIN), adminReferralController.createCampaign);
+router.put('/referrals/campaigns/:id', authorizeAdminRoles(ADMIN_ROLES.SUPER_ADMIN, ADMIN_ROLES.FINANCE_ADMIN), adminReferralController.updateCampaign);
+router.delete('/referrals/campaigns/:id', authorizeAdminRoles(ADMIN_ROLES.SUPER_ADMIN, ADMIN_ROLES.FINANCE_ADMIN), adminReferralController.deleteCampaign);
 
 // ============================================
 // VENDOR MANAGEMENT

@@ -13,32 +13,43 @@ app.get('/health', (req, res) => {
     res.status(200).json({ status: 'API Gateway is running' });
 });
 
-// Proxy routes
-// Auth Service
+// --- AUTH SERVICE PROXIES ---
 app.use('/api/auth', createProxyMiddleware({
     target: process.env.AUTH_SERVICE_URL || 'http://localhost:3001',
     changeOrigin: true,
-    pathRewrite: {
-        '^/api/auth': '/auth', // Rewrites /api/auth/login to /auth/login
-    },
+    pathRewrite: { '^/api/auth': '/auth' },
 }));
 
-// Catalog Service
+app.use('/api/admin/auth', createProxyMiddleware({
+    target: process.env.AUTH_SERVICE_URL || 'http://localhost:3001',
+    changeOrigin: true,
+    pathRewrite: { '^/api/admin/auth': '/admin' },
+}));
+
+// --- CATALOG SERVICE PROXIES ---
 app.use('/api/catalog', createProxyMiddleware({
     target: process.env.CATALOG_SERVICE_URL || 'http://localhost:3002',
     changeOrigin: true,
-    pathRewrite: {
-        '^/api/catalog': '/catalog',
-    },
+    pathRewrite: { '^/api/catalog': '/catalog' },
 }));
 
-// Order Service
+app.use('/api/admin/catalog', createProxyMiddleware({
+    target: process.env.CATALOG_SERVICE_URL || 'http://localhost:3002',
+    changeOrigin: true,
+    pathRewrite: { '^/api/admin/catalog': '/admin' },
+}));
+
+// --- ORDER SERVICE PROXIES ---
 app.use('/api/orders', createProxyMiddleware({
     target: process.env.ORDER_SERVICE_URL || 'http://localhost:3003',
     changeOrigin: true,
-    pathRewrite: {
-        '^/api/orders': '/orders',
-    },
+    pathRewrite: { '^/api/orders': '/orders' },
+}));
+
+app.use('/api/admin/orders', createProxyMiddleware({
+    target: process.env.ORDER_SERVICE_URL || 'http://localhost:3003',
+    changeOrigin: true,
+    pathRewrite: { '^/api/admin/orders': '/admin' },
 }));
 
 app.listen(PORT, () => {

@@ -1,5 +1,6 @@
 const { PrismaClient } = require('@prisma/client');
 const { calculateDeliveryDate, getPriceMultiplier } = require('../utils/pricing');
+const { fetchItemPrices } = require('../utils/catalogServiceClient');
 
 const prisma = new PrismaClient();
 
@@ -8,14 +9,27 @@ const createOrder = async (req, res) => {
         const { userId, items, pickupTime, serviceType, gstNumber, pickupAddress, deliveryAddress } = req.body;
         // items: [{ itemId, quantity, condition, images: [url1, url2] }]
 
-        // Simple calculation logic (omitted complex item lookup for speed, assuming client sends totals or we'd need Catalog Service calls)
-        // For MVP, assuming client sends valid totals or we trust the basePrice if we had it.
-        // Let's assume the client sends expected totalAmount for now, or we'd fetch prices from Catalog Service.
-        // Since we don't have direct DB access to Catalog here, strict microservices would require HTTP call.
-        // I will implement a rudimentary calculation or trust valid input for this step to save time on inter-service comms implementation.
+        // Fetch authoritative pricing from Catalog Service
+        const itemIds = items.map(i => i.itemId);
+        const pricingMap = await fetchItemPrices(itemIds);
 
-        // Better: Receive totalAmount from client computed from Catalog. verify later.
-        const totalAmount = req.body.totalAmount || 100; // Placeholder
+        const serviceMultiplier = getPriceMultiplier(serviceType);
+
+        let authoritativeTotalAmount = 0;
+        const validItemsForDb = items.map(item => {
+            const basePrice = pricingMap[item.itemId] || 0;
+            const itemTotal = basePrice * item.quantity * serviceMultiplier;
+            authoritativeTotalAmount += itemTotal;
+
+            return {
+                itemId: item.itemId,
+                quantity: item.quantity,
+                condition: item.condition,
+                images: {
+                    create: item.images ? item.images.map(img => ({ imageUrl: img })) : []
+                }
+            };
+        });
 
         const deliveryTime = calculateDeliveryDate(new Date(pickupTime), serviceType);
 
@@ -27,17 +41,10 @@ const createOrder = async (req, res) => {
                 pickupAddress,
                 deliveryAddress,
                 serviceType,
-                totalAmount,
+                totalAmount: authoritativeTotalAmount,
                 gstNumber,
                 items: {
-                    create: items.map(item => ({
-                        itemId: item.itemId,
-                        quantity: item.quantity,
-                        condition: item.condition, // Capture condition (damage/stain)
-                        images: {
-                            create: item.images.map(img => ({ imageUrl: img }))
-                        }
-                    }))
+                    create: validItemsForDb
                 }
             },
             include: {

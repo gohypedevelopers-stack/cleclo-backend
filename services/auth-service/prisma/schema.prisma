@@ -1,5 +1,6 @@
 generator client {
   provider = "prisma-client-js"
+  engineType = "binary"
 }
 
 datasource db {
@@ -130,6 +131,7 @@ model Wallet {
   user         User     @relation(fields: [userId], references: [id])
   balance      Float    @default(0)
   transactions WalletTransaction[]
+  creditLots   WalletCreditLot[]
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 }
@@ -142,6 +144,90 @@ model WalletTransaction {
   type      String   // credit, debit
   note      String?
   createdAt DateTime @default(now())
+}
+
+model WalletPlatformConfig {
+  id            String   @id @default(uuid())
+  minAddAmount  Float    @default(100)
+  maxAddAmount  Float    @default(10000)
+  bonusEnabled  Boolean  @default(true)
+  updatedByAdminId   String?
+  updatedByAdminName String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model WalletRewardRule {
+  id            String   @id @default(uuid())
+  ruleType      String   // order_cashback, recharge_bonus, referral_referrer, referral_referee
+  rewardMode    String   // percentage, fixed_amount
+  rewardValue   Float
+  minOrderValue Float?   @default(0)
+  minRechargeValue Float? @default(0)
+  maxRewardAmount  Float?
+  targetCityCodes  String[]
+  firstOrderOnly   Boolean @default(false)
+  expiryDays       Int?
+  priorityRank     Int     @default(0)
+  isActive         Boolean @default(true)
+  startAt          DateTime?
+  endAt            DateTime?
+  createdByAdminId   String?
+  createdByAdminName String?
+  updatedByAdminId   String?
+  updatedByAdminName String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+model WalletCreditLot {
+  id                String   @id @default(uuid())
+  walletId          String
+  wallet            Wallet   @relation(fields: [walletId], references: [id])
+  sourceType        String   // cash_recharge, cashback, recharge_bonus, referral_bonus, manual_credit
+  sourceReferenceId String?
+  originalAmount    Float
+  remainingAmount   Float
+  isPromotional     Boolean  @default(false)
+  expiresAt         DateTime?
+  status            String   @default("active") // active, consumed, expired
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+model ReferralCampaign {
+  id                   String   @id @default(uuid())
+  title                String
+  bannerTitle          String?
+  bannerSubtitle       String?
+  bannerImageUrl       String?
+  referrerRewardAmount Float    @default(0)
+  refereeRewardAmount  Float    @default(0)
+  firstOrderRequired   Boolean  @default(true)
+  minimumCartValue     Float    @default(0)
+  targetCityCodes      String[]
+  rewardExpiryDays     Int      @default(30)
+  maxReferralsPerUser  Int?
+  isActive             Boolean  @default(true)
+  startAt              DateTime?
+  endAt                DateTime?
+  createdByAdminId     String?
+  createdByAdminName   String?
+  updatedByAdminId     String?
+  updatedByAdminName   String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+}
+
+model ReferralRedemption {
+  id                  String   @id @default(uuid())
+  campaignId          String
+  referrerUserId      String
+  refereeUserId       String
+  refereeFirstOrderId String?
+  rewardGrantedAt     DateTime?
+  status              String   @default("pending") // pending, completed, failed
+  createdAt           DateTime @default(now())
 }
 
 // Vendor Settlements/Payouts

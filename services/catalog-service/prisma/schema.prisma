@@ -1,5 +1,6 @@
 generator client {
   provider = "prisma-client-js"
+  engineType = "binary"
 }
 
 datasource db {
@@ -11,7 +12,22 @@ model Service {
   id          String     @id @default(uuid())
   name        String     @unique // Dry Clean, Wash Only, Iron
   slug        String     @unique
+  description String?
+  icon        String?
+  displayOrder Int       @default(0)
+  isActive    Boolean    @default(true)
+  defaultProcessingHours Int @default(72)
+  expressOptionAllowed Boolean @default(true)
+  surgePricingAllowed Boolean @default(true)
+  defaultCommissionPercent Float @default(18)
+  createdByAdminId   String?
+  createdByAdminName String?
+  updatedByAdminId   String?
+  updatedByAdminName String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
   categories  Category[]
+  color       String?
 }
 
 model Category {
@@ -19,17 +35,241 @@ model Category {
   serviceId String
   service   Service  @relation(fields: [serviceId], references: [id])
   name      String
-  order     Int      @default(0)
+  icon      String?
+  displayOrder Int   @default(0)
+  isActive  Boolean  @default(true)
+  createdByAdminId   String?
+  createdByAdminName String?
+  updatedByAdminId   String?
+  updatedByAdminName String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  subCategories SubCategory[]
+}
+
+model SubCategory {
+  id        String   @id @default(uuid())
+  categoryId String
+  category  Category @relation(fields: [categoryId], references: [id])
+  name      String
+  displayOrder Int   @default(0)
+  isActive  Boolean  @default(true)
+  createdByAdminId   String?
+  createdByAdminName String?
+  updatedByAdminId   String?
+  updatedByAdminName String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
   items     Item[]
 }
 
 model Item {
-  id         String   @id @default(uuid())
-  categoryId String
-  category   Category @relation(fields: [categoryId], references: [id])
-  name       String
-  basePrice  Float
-  imageUrl   String?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id            String   @id @default(uuid())
+  subCategoryId String
+  subCategory   SubCategory @relation(fields: [subCategoryId], references: [id])
+  skuCode       String?  @unique
+  name          String
+  imageUrl      String?
+  customerPrice Float    @default(0)
+  vendorShare   Float    @default(0)
+  gstPercent    Float    @default(0)
+  isActive      Boolean  @default(true)
+  availableFrom DateTime?
+  availableUntil DateTime?
+  createdByAdminId   String?
+  createdByAdminName String?
+  updatedByAdminId   String?
+  updatedByAdminName String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  priceOverrides ItemPriceOverride[]
+}
+
+model CatalogAvailabilityRule {
+  id        String   @id @default(uuid())
+  entityType String  // service, category, subcategory, item
+  entityId   String
+  cityCode   String?
+  vendorId   String?
+  isVisible  Boolean @default(true)
+  availableFrom DateTime?
+  availableUntil DateTime?
+  createdByAdminId   String?
+  createdByAdminName String?
+  updatedByAdminId   String?
+  updatedByAdminName String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([entityType, entityId])
+  @@index([cityCode])
+}
+
+model ItemPriceOverride {
+  id            String   @id @default(uuid())
+  itemId        String
+  item          Item     @relation(fields: [itemId], references: [id])
+  cityCode      String?
+  vendorId      String?
+  customerPrice Float
+  vendorShare   Float
+  gstPercent    Float    @default(0)
+  effectiveFrom DateTime?
+  effectiveTo   DateTime?
+  priority      Int      @default(0)
+  isActive      Boolean  @default(true)
+  createdByAdminId   String?
+  createdByAdminName String?
+  updatedByAdminId   String?
+  updatedByAdminName String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([itemId])
+  @@index([cityCode])
+}
+
+model MediaAsset {
+  id          String   @id @default(uuid())
+  assetType   String   // image, video_thumbnail, promo_art
+  fileUrl     String
+  mimeType    String?
+  fileSize    Int?
+  width       Int?
+  height      Int?
+  createdByAdminId   String?
+  createdByAdminName String?
+  createdAt   DateTime @default(now())
+}
+
+model HomeBanner {
+  id            String   @id @default(uuid())
+  title         String
+  subtitle      String?
+  ctaLabel      String?
+  ctaType       String?  // service, category, subcategory, item, campaign, external_url
+  ctaTargetId   String?
+  ctaUrl        String?
+  mediaAssetId  String?
+  imageUrl      String?
+  isActive      Boolean  @default(true)
+  startAt       DateTime?
+  endAt         DateTime?
+  priorityRank  Int      @default(0)
+  targetCityCodes    String[] @default([])
+  targetVendorIds    String[] @default([])
+  targetUserSegments String[] @default([])
+  createdByAdminId   String?
+  createdByAdminName String?
+  updatedByAdminId   String?
+  updatedByAdminName String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model HomeVideo {
+  id            String   @id @default(uuid())
+  title         String
+  description   String?
+  videoUrl      String
+  thumbnailAssetId String?
+  thumbnailUrl  String?
+  durationSeconds Int?
+  sortOrder     Int      @default(0)
+  isActive      Boolean  @default(true)
+  startAt       DateTime?
+  endAt         DateTime?
+  targetCityCodes    String[] @default([])
+  targetVendorIds    String[] @default([])
+  targetUserSegments String[] @default([])
+  createdByAdminId   String?
+  createdByAdminName String?
+  updatedByAdminId   String?
+  updatedByAdminName String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model Campaign {
+  id            String   @id @default(uuid())
+  title         String
+  code          String?  @unique
+  description   String?
+  campaignType  String   // coupon, vendor_sponsored, platform_funded, free_pickup, express_upsell
+  discountType  String   // percentage, fixed_amount, free_pickup, express_multiplier_override
+  discountValue Float    @default(0)
+  minCartValue  Float    @default(0)
+  firstOrderOnly Boolean @default(false)
+  sponsorVendorId String?
+  fundingSource String?
+  usageLimitPerUser Int?
+  totalUsageLimit Int?
+  targetCityCodes    String[] @default([])
+  targetVendorIds    String[] @default([])
+  targetServiceIds   String[] @default([])
+  targetUserSegments String[] @default([])
+  bannerAssetId  String?
+  bannerUrl      String?
+  priorityRank   Int      @default(0)
+  isActive       Boolean  @default(true)
+  startAt        DateTime?
+  endAt          DateTime?
+  metadata       Json?
+  createdByAdminId   String?
+  createdByAdminName String?
+  updatedByAdminId   String?
+  updatedByAdminName String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model CityConfig {
+  id            String   @id @default(uuid())
+  cityCode      String   @unique
+  cityName      String
+  isEnabled     Boolean  @default(true)
+  displayOrder  Int      @default(0)
+  timezone      String   @default("Asia/Kolkata")
+  createdByAdminId   String?
+  createdByAdminName String?
+  updatedByAdminId   String?
+  updatedByAdminName String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model AreaConfig {
+  id            String   @id @default(uuid())
+  cityCode      String
+  areaCode      String   @unique
+  areaName      String
+  isEnabled     Boolean  @default(true)
+  surgePercent  Float    @default(0)
+  createdByAdminId   String?
+  createdByAdminName String?
+  updatedByAdminId   String?
+  updatedByAdminName String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([cityCode])
+}
+
+model TimeSlotConfig {
+  id            String   @id @default(uuid())
+  cityCode      String
+  slotType      String   // pickup, delivery
+  dayOfWeek     Int      // 0 = Sunday, 1 = Monday, etc.
+  startTime     String   // "09:00"
+  endTime       String   // "11:00"
+  capacityLimit Int?
+  isActive      Boolean  @default(true)
+  createdByAdminId   String?
+  createdByAdminName String?
+  updatedByAdminId   String?
+  updatedByAdminName String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([cityCode, slotType])
 }

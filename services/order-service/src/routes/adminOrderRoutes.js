@@ -11,6 +11,7 @@ router.get('/dashboard/stats', adminOrderController.getDashboardStats);
 // Orders
 router.get('/', adminOrderController.getAllOrders);
 router.get('/issues', adminOrderController.getOrdersWithIssues);
+router.get('/:id', adminOrderController.getOrderById);
 router.patch('/:id/status', adminOrderController.updateOrderStatus);
 
 // Assignments

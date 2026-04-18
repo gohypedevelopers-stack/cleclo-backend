@@ -1,0 +1,1 @@
+const { PrismaClient } = require('@prisma/client'); const p = new PrismaClient(); async function main() { console.log('=== CATALOG ITEMS ==='); console.table(await p.item.findMany({ select: { id: true, name: true, customerPrice: true, vendorShare: true, isActive: true } })); } main().finally(() => p.$disconnect());

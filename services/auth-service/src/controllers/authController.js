@@ -71,6 +71,12 @@ const login = async (req, res) => {
     }
 };
 
+const sendOtp = async (req, res) => {
+    const { phone } = req.body;
+    console.log(`[MOCK] Sending OTP 1234 to ${phone}`);
+    res.json({ message: 'OTP sent successfully (Mock: 1234)' });
+};
+
 const verifyOtp = async (req, res) => {
     // Mock OTP verification
     const { phone, otp } = req.body;
@@ -174,6 +180,7 @@ const updateProfile = async (req, res) => {
 module.exports = {
     signup,
     login,
+    sendOtp,
     verifyOtp,
     registerVendor,
     updateProfile

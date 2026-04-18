@@ -49,7 +49,7 @@ app.use('/api/orders', createProxyMiddleware({
 app.use('/api/admin/orders', createProxyMiddleware({
     target: process.env.ORDER_SERVICE_URL || 'http://localhost:3003',
     changeOrigin: true,
-    pathRewrite: { '^/api/admin/orders': '/admin' },
+    pathRewrite: { '^/api/admin/orders': '/admin/orders' },
 }));
 
 app.listen(PORT, () => {

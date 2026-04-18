@@ -6,6 +6,7 @@ const router = express.Router();
 
 router.post('/signup', signup);
 router.post('/login', login);
+router.post('/send-otp', sendOtp);
 router.post('/verify-otp', verifyOtp);
 router.post('/admin/login', adminAuthController.loginAdmin);
 router.post('/admin/verify-otp', adminAuthController.verifyAdminOtp);

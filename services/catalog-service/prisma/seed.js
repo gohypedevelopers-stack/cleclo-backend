@@ -4,17 +4,33 @@ const prisma = new PrismaClient();
 async function main() {
     console.log('🌱 UPSERTING Catalog Service database with financial test cases...');
 
-    // 1. Categories
-    const catMen = await prisma.category.upsert({ where: { name: 'Men' }, update: {}, create: { name: 'Men', description: "Men's Clothing", iconUrl: 'men.png', isActive: true }});
-    const catWomen = await prisma.category.upsert({ where: { name: 'Women' }, update: {}, create: { name: 'Women', description: "Women's Clothing", iconUrl: 'women.png', isActive: true }});
-    const catHome = await prisma.category.upsert({ where: { name: 'Home' }, update: {}, create: { name: 'Home', description: "Home Furnishings", iconUrl: 'home.png', isActive: true }});
+    // 1. Service
+    let mainService = await prisma.service.findFirst({ where: { name: 'Laundry' } });
+    if (!mainService) {
+        mainService = await prisma.service.create({ data: { name: 'Laundry', slug: 'laundry', isActive: true } });
+    }
 
-    // 2. SubCategories
-    const subShirts = await prisma.subCategory.upsert({ where: { name: 'Shirts & T-Shirts' }, update: {}, create: { categoryId: catMen.id, name: 'Shirts & T-Shirts', isActive: true }});
-    const subEthnic = await prisma.subCategory.upsert({ where: { name: 'Ethnic Wear' }, update: {}, create: { categoryId: catWomen.id, name: 'Ethnic Wear', isActive: true }});
-    const subBed = await prisma.subCategory.upsert({ where: { name: 'Bed & Bath' }, update: {}, create: { categoryId: catHome.id, name: 'Bed & Bath', isActive: true }});
+    // 2. Categories
+    const upsertCat = async (name) => {
+        let cat = await prisma.category.findFirst({ where: { name } });
+        if (!cat) cat = await prisma.category.create({ data: { name, serviceId: mainService.id, isActive: true } });
+        return cat;
+    };
+    const catMen = await upsertCat('Men');
+    const catWomen = await upsertCat('Women');
+    const catHome = await upsertCat('Home');
 
-    // 3. Service Items (With intentional margin variations including a LOSS case)
+    // 3. SubCategories
+    const upsertSubCat = async (name, catId) => {
+        let sub = await prisma.subCategory.findFirst({ where: { name } });
+        if (!sub) sub = await prisma.subCategory.create({ data: { name, categoryId: catId, isActive: true } });
+        return sub;
+    };
+    const subShirts = await upsertSubCat('Shirts & T-Shirts', catMen.id);
+    const subEthnic = await upsertSubCat('Ethnic Wear', catWomen.id);
+    const subBed = await upsertSubCat('Bed & Bath', catHome.id);
+
+    // 4. Service Items (With intentional margin variations including a LOSS case)
     const items = [
         { name: 'Cotton Shirt - Wash & Iron', subCat: subShirts.id, cp: 60, vs: 45 },  // 25% margin
         { name: 'T-Shirt - Dry Clean', subCat: subShirts.id, cp: 120, vs: 80 },        // 33% margin
@@ -26,19 +42,17 @@ async function main() {
     ];
 
     for (const item of items) {
-        // Find existing to avoid dupes since we don't have unique on name
-        const existing = await prisma.serviceItem.findFirst({ where: { name: item.name } });
+        const existing = await prisma.item.findFirst({ where: { name: item.name } });
         if (existing) {
-            await prisma.serviceItem.update({
+            await prisma.item.update({
                 where: { id: existing.id },
                 data: { customerPrice: item.cp, vendorShare: item.vs, isActive: true }
             });
         } else {
-            await prisma.serviceItem.create({
+            await prisma.item.create({
                 data: {
                     subCategoryId: item.subCat,
                     name: item.name,
-                    description: `Standard ${item.name}`,
                     customerPrice: item.cp,
                     vendorShare: item.vs,
                     isActive: true

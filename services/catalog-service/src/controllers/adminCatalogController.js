@@ -313,6 +313,77 @@ const deleteItem = async (req, res) => {
     }
 };
 
+// ============================================
+// BULK OPERATIONS
+// ============================================
+
+const bulkUploadItems = async (req, res) => {
+    try {
+        const { items } = req.body; // Array of item objects
+        if (!Array.isArray(items)) return res.status(400).json({ error: 'Items array required' });
+
+        const createdItems = [];
+        for (const itemData of items) {
+            const item = await prisma.item.create({
+                data: {
+                    ...itemData,
+                    customerPrice: parseFloat(itemData.customerPrice || 0),
+                    vendorShare: parseFloat(itemData.vendorShare || 0),
+                    createdByAdminId: req.admin?.userId
+                }
+            });
+            createdItems.push(item);
+        }
+
+        res.status(201).json({ count: createdItems.length, items: createdItems });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+const bulkPriceUpdate = async (req, res) => {
+    try {
+        const { updates } = req.body; // Array of { id, customerPrice, vendorShare }
+        if (!Array.isArray(updates)) return res.status(400).json({ error: 'Updates array required' });
+
+        const results = await Promise.all(
+            updates.map(u => 
+                prisma.item.update({
+                    where: { id: u.id },
+                    data: {
+                        customerPrice: parseFloat(u.customerPrice),
+                        vendorShare: parseFloat(u.vendorShare),
+                        updatedByAdminId: req.admin?.userId
+                    }
+                })
+            )
+        );
+
+        res.json({ count: results.length });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+const pricePreview = async (req, res) => {
+    try {
+        const { items } = req.body; // [{ customerPrice, vendorShare }]
+        const preview = items.map(item => {
+            const price = parseFloat(item.customerPrice || 0);
+            const share = parseFloat(item.vendorShare || 0);
+            return {
+                customerPrice: price,
+                vendorShare: share,
+                platformCommission: price - share,
+                marginPercent: price > 0 ? ((price - share) / price) * 100 : 0
+            };
+        });
+        res.json(preview);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
 module.exports = {
     getAllServices,
     createService,
@@ -333,5 +404,9 @@ module.exports = {
     getAllItems,
     createItem,
     updateItem,
-    deleteItem
+    deleteItem,
+
+    bulkUploadItems,
+    bulkPriceUpdate,
+    pricePreview
 };

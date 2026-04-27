@@ -4,6 +4,10 @@ const {
     markAllIssuesReviewed,
     updateIssue
 } = require('../data/adminDashboardData');
+const { PrismaClient } = require('@prisma/client');
+const { fetchAllAdminOrders } = require('../utils/orderServiceClient');
+
+const prisma = new PrismaClient();
 
 const ISSUE_ACTIONS = new Set(['assign', 'review', 'escalate', 'resolve']);
 const ROOT_CAUSES = new Set(['Vendor Fault', 'Rider Fault', 'Customer Fault', 'System Issue']);
@@ -202,9 +206,88 @@ const updateIssueAlertHandler = async (req, res) => {
     }
 };
 
+// ─── Vendor Weekly Activity ───────────────────────────────────────────────────
+const WEEK_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+function getWeekDateRange() {
+    const today = new Date();
+    const dow = today.getDay() === 0 ? 7 : today.getDay(); // Mon=1…Sun=7
+    const monday = new Date(today);
+    monday.setDate(today.getDate() - (dow - 1));
+    monday.setHours(0, 0, 0, 0);
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+    sunday.setHours(23, 59, 59, 999);
+    return { monday, sunday };
+}
+
+const getVendorWeeklyActivityHandler = async (req, res) => {
+    try {
+        const { monday, sunday } = getWeekDateRange();
+
+        // --- 1. All approved, unblocked vendors from auth DB ---
+        const approvedVendors = await prisma.user.findMany({
+            where: {
+                role: 'vendor',
+                isBlocked: false,
+                vendorProfile: { isApproved: true }
+            },
+            select: { id: true, createdAt: true }
+        });
+        const approvedVendorIds = new Set(approvedVendors.map(v => v.id));
+
+        // --- 2. Fetch orders this week from order service ---
+        let orders = [];
+        try {
+            const all = await fetchAllAdminOrders();
+            orders = Array.isArray(all) ? all : [];
+        } catch {
+            orders = [];
+        }
+
+        // Filter only orders in the current week with an assigned approved vendor
+        const weekOrders = orders.filter(o => {
+            if (!o.vendorId || !approvedVendorIds.has(o.vendorId)) return false;
+            const d = new Date(o.createdAt || o.pickupTime);
+            return d >= monday && d <= sunday;
+        });
+
+        // --- 3. Build Mon–Sun array ---
+        const result = WEEK_DAYS.map((day, i) => {
+            const dayStart = new Date(monday);
+            dayStart.setDate(monday.getDate() + i);
+            dayStart.setHours(0, 0, 0, 0);
+            const dayEnd = new Date(dayStart);
+            dayEnd.setHours(23, 59, 59, 999);
+
+            // Distinct vendors that had ≥1 order this day
+            const activeSet = new Set(
+                weekOrders
+                    .filter(o => {
+                        const d = new Date(o.createdAt || o.pickupTime);
+                        return d >= dayStart && d <= dayEnd;
+                    })
+                    .map(o => o.vendorId)
+            );
+
+            // Fallback: if no orders exist yet today/future, count cumulative approved vendors
+            const now = new Date();
+            const isFuture = dayStart > now;
+            const active = isFuture ? 0 : (activeSet.size > 0 ? activeSet.size : approvedVendors.filter(v => new Date(v.createdAt) <= dayEnd).length);
+
+            return { day, active };
+        });
+
+        res.json({ weeklyActivity: result, generatedAt: new Date().toISOString() });
+    } catch (error) {
+        res.status(500).json({ message: 'Failed to load vendor weekly activity', error: error.message });
+    }
+};
+
 module.exports = {
     getDashboardOverviewHandler,
     getIssueAlertsHandler,
     markAllIssuesReviewedHandler,
-    updateIssueAlertHandler
+    updateIssueAlertHandler,
+    getVendorWeeklyActivityHandler
 };

@@ -39,7 +39,7 @@ async function main() {
         {
             id: 'ord-2222', userId: CUSTOMERS[1], vendorId: VENDORS[1], riderId: RIDERS[1],
             status: 'processing', totalAmount: 850,
-            createdAt: rDate(-30), pickupTime: rDate(-28),
+            createdAt: rDate(-30), pickupTime: rDate(-28), deliveryTime: rDate(-5),
             pickupAddress: 'Andheri East, Mumbai', deliveryAddress: 'Andheri East, Mumbai',
             serviceType: 'Express 24h', paymentStatus: 'paid', hasIssue: false,
         },
@@ -47,7 +47,7 @@ async function main() {
         {
             id: 'ord-3333', userId: CUSTOMERS[2], vendorId: VENDORS[0],
             status: 'pending', totalAmount: 1200,
-            createdAt: rDate(-4),
+            createdAt: rDate(-4), pickupTime: rDate(10), deliveryTime: rDate(20),
             pickupAddress: 'Saket Enclave, Delhi', deliveryAddress: 'Saket Enclave, Delhi',
             serviceType: 'Standard', paymentStatus: 'pending', hasIssue: false,
         },
@@ -55,7 +55,7 @@ async function main() {
         {
             id: 'ord-4444', userId: CUSTOMERS[3], vendorId: VENDORS[2], riderId: RIDERS[2],
             status: 'issue_reported', totalAmount: 3200,
-            createdAt: rDate(-12), pickupTime: rDate(-10),
+            createdAt: rDate(-12), pickupTime: rDate(-10), deliveryTime: rDate(36),
             pickupAddress: 'Bandra West, Mumbai', deliveryAddress: 'Bandra West, Mumbai',
             serviceType: 'Standard', paymentStatus: 'paid', hasIssue: true, issueType: 'damage', issueNote: 'Silk saree torn during wash'
         },
@@ -63,7 +63,7 @@ async function main() {
         {
             id: 'ord-5555', userId: CUSTOMERS[4], vendorId: VENDORS[1], riderId: RIDERS[0],
             status: 'received_by_vendor', totalAmount: 650,
-            createdAt: rDate(-10), pickupTime: rDate(-8),
+            createdAt: rDate(-10), pickupTime: rDate(-8), deliveryTime: rDate(62),
             pickupAddress: 'Koramangala, BLR', deliveryAddress: 'Koramangala, BLR',
             serviceType: 'Standard', paymentStatus: 'paid', hasIssue: false,
         },
@@ -71,7 +71,7 @@ async function main() {
         {
             id: 'ord-6666', userId: CUSTOMERS[0], vendorId: VENDORS[0], riderId: RIDERS[1],
             status: 'picked_up', totalAmount: 1800,
-            createdAt: rDate(-50), pickupTime: rDate(-48),
+            createdAt: rDate(-50), pickupTime: rDate(-48), deliveryTime: rDate(2),
             pickupAddress: 'Marine Drive, Mumbai', deliveryAddress: 'Marine Drive, Mumbai',
             serviceType: 'Standard', paymentStatus: 'paid', hasIssue: false,
         }

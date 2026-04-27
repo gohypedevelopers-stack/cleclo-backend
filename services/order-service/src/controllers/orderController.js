@@ -6,12 +6,31 @@ const prisma = new PrismaClient();
 
 const createOrder = async (req, res) => {
     try {
-        const { userId, items, pickupTime, serviceType, gstNumber, pickupAddress, deliveryAddress } = req.body;
-        // items: [{ itemId, quantity, condition, images: [url1, url2] }]
+        const { 
+            userId, 
+            items, 
+            pickupTime, 
+            serviceType, 
+            gstNumber, 
+            pickupAddress, 
+            deliveryAddress, 
+            cityCode, 
+            vendorId,
+            areaName,
+            slotId
+        } = req.body;
 
-        // Fetch authoritative pricing from Catalog Service
+        // 1. Validate Location and Slot
+        const { validateLocationAndSlot } = require('../utils/catalogServiceClient');
+        const validation = await validateLocationAndSlot({ cityCode, areaName, pickupTime, slotId });
+        
+        if (!validation.valid) {
+            return res.status(400).json({ message: validation.message || 'Invalid location or time slot' });
+        }
+
+        // 2. Fetch authoritative pricing from Catalog Service
         const itemIds = items.map(i => i.itemId);
-        const pricingMap = await fetchItemPrices(itemIds);
+        const pricingMap = await fetchItemPrices(itemIds, cityCode, vendorId);
 
         const serviceMultiplier = getPriceMultiplier(serviceType);
 
@@ -31,6 +50,9 @@ const createOrder = async (req, res) => {
             };
         });
 
+        // 3. Add surcharges
+        authoritativeTotalAmount += (validation.totalLocationSurcharge || 0);
+
         const deliveryTime = calculateDeliveryDate(new Date(pickupTime), serviceType);
 
         const order = await prisma.order.create({
@@ -43,6 +65,7 @@ const createOrder = async (req, res) => {
                 serviceType,
                 totalAmount: authoritativeTotalAmount,
                 gstNumber,
+                cityCode,
                 items: {
                     create: validItemsForDb
                 }

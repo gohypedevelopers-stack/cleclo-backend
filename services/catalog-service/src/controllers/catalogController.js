@@ -64,14 +64,43 @@ const getInputData = async (req, res) => {
 
 const getItemsByIds = async (req, res) => {
     try {
-        const { itemIds } = req.body;
+        const { itemIds, cityCode, vendorId } = req.body;
         if (!Array.isArray(itemIds)) {
             return res.status(400).json({ message: 'itemIds must be an array' });
         }
+        
         const items = await prisma.item.findMany({
-            where: { id: { in: itemIds } }
+            where: { id: { in: itemIds } },
+            include: {
+                priceOverrides: {
+                    where: {
+                        isActive: true,
+                        OR: [
+                            { cityCode: cityCode || null },
+                            { vendorId: vendorId || null }
+                        ]
+                    },
+                    orderBy: { priority: 'desc' }
+                }
+            }
         });
-        res.json(items);
+
+        // Resolve price for each item
+        const resolvedItems = items.map(item => {
+            const override = item.priceOverrides[0]; // Highest priority because of orderBy
+            if (override) {
+                return {
+                    ...item,
+                    customerPrice: override.customerPrice,
+                    vendorShare: override.vendorShare,
+                    gstPercent: override.gstPercent,
+                    isOverridden: true
+                };
+            }
+            return { ...item, isOverridden: false };
+        });
+
+        res.json(resolvedItems);
     } catch (error) {
         res.status(500).json({ error: error.message });
     }

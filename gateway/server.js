@@ -39,6 +39,19 @@ app.use('/api/admin/catalog', createProxyMiddleware({
     pathRewrite: { '^/api/admin/catalog': '/admin' },
 }));
 
+// Fallback for /api/catalog/admin if used by some frontend parts
+app.use('/api/catalog/admin', createProxyMiddleware({
+    target: process.env.CATALOG_SERVICE_URL || 'http://localhost:3002',
+    changeOrigin: true,
+    pathRewrite: { '^/api/catalog/admin': '/admin' },
+}));
+
+app.use('/api/auth/admin', createProxyMiddleware({
+    target: process.env.AUTH_SERVICE_URL || 'http://localhost:3001',
+    changeOrigin: true,
+    pathRewrite: { '^/api/auth/admin': '/admin' },
+}));
+
 // --- ORDER SERVICE PROXIES ---
 app.use('/api/orders', createProxyMiddleware({
     target: process.env.ORDER_SERVICE_URL || 'http://localhost:3003',

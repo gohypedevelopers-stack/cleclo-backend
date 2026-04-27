@@ -97,9 +97,42 @@ const updateRewardRule = async (req, res) => {
 
 const deleteRewardRule = async (req, res) => {
     try {
-        const { id } = req.params;
-        await prisma.walletRewardRule.delete({ where: { id } });
-        res.json({ message: 'Reward rule deleted' });
+        await prisma.walletRewardRule.delete({
+            where: { id }
+        });
+        res.status(204).send();
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+// ============================================
+// LIABILITY SUMMARY
+// ============================================
+
+const getWalletLiabilitySummary = async (req, res) => {
+    try {
+        const totalWalletBalance = await prisma.wallet.aggregate({
+            _sum: { balance: true }
+        });
+
+        const activePromotionalLots = await prisma.walletCreditLot.aggregate({
+            where: {
+                isPromotional: true,
+                status: 'active',
+                OR: [
+                    { expiresAt: null },
+                    { expiresAt: { gt: new Date() } }
+                ]
+            },
+            _sum: { remainingAmount: true }
+        });
+
+        res.json({
+            totalLiability: totalWalletBalance._sum.balance || 0,
+            promotionalLiability: activePromotionalLots._sum.remainingAmount || 0,
+            cashLiability: (totalWalletBalance._sum.balance || 0) - (activePromotionalLots._sum.remainingAmount || 0)
+        });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -107,5 +140,6 @@ const deleteRewardRule = async (req, res) => {
 
 module.exports = {
     getPlatformConfig, updatePlatformConfig,
-    getRewardRules, createRewardRule, updateRewardRule, deleteRewardRule
+    getRewardRules, createRewardRule, updateRewardRule, deleteRewardRule,
+    getWalletLiabilitySummary
 };

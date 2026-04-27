@@ -7,6 +7,7 @@ const router = express.Router();
 
 // Dashboard
 router.get('/dashboard/stats', adminOrderController.getDashboardStats);
+router.get('/analytics', adminOrderController.getAnalyticsData);
 
 // Orders
 router.get('/', adminOrderController.getAllOrders);

@@ -251,6 +251,28 @@ const getPendingVendors = async (req, res) => {
     }
 };
 
+// Get single vendor by ID
+const getVendorById = async (req, res) => {
+    try {
+        const vendor = await prisma.user.findUnique({
+            where: { id: req.params.id, role: 'vendor' },
+            include: {
+                vendorProfile: true,
+                addresses: true,
+                wallet: true
+            }
+        });
+
+        if (!vendor) {
+            return res.status(404).json({ error: 'Vendor not found' });
+        }
+
+        res.json(vendor);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
 // Get all vendors
 const getAllVendors = async (req, res) => {
     try {
@@ -267,7 +289,18 @@ const getAllVendors = async (req, res) => {
             },
             orderBy: { createdAt: 'desc' }
         });
-        res.json(vendors);
+
+        // Bypass Prisma Client type lock for the new analytical fields by querying raw
+        const analytics = await prisma.$queryRawUnsafe('SELECT "userId", "totalRevenue", "commissionEarned", "payoutPending", "slaScore", "rating", "issueRate" FROM "VendorProfile"');
+        const mappedVendors = vendors.map(v => {
+            const stats = analytics.find(a => a.userId === v.id);
+            if (stats && v.vendorProfile) {
+                v.vendorProfile = { ...v.vendorProfile, ...stats };
+            }
+            return v;
+        });
+
+        res.json(mappedVendors);
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -398,6 +431,7 @@ module.exports = {
     // Vendor Management
     getPendingVendors,
     getAllVendors,
+    getVendorById,
     updateVendor,
     approveVendor,
     suspendVendor,

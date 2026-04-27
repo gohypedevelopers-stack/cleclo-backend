@@ -2,9 +2,13 @@ const axios = require('axios');
 
 const CATALOG_SERVICE_URL = process.env.CATALOG_SERVICE_URL || 'http://localhost:3002';
 
-async function fetchItemPrices(itemIds) {
+async function fetchItemPrices(itemIds, cityCode = null, vendorId = null) {
     try {
-        const response = await axios.post(`${CATALOG_SERVICE_URL}/catalog/items/bulk`, { itemIds });
+        const response = await axios.post(`${CATALOG_SERVICE_URL}/catalog/items/bulk`, { 
+            itemIds,
+            cityCode,
+            vendorId
+        });
         const items = response.data;
         
         // Map to an object for fast retrieval: { itemId: customerPrice }
@@ -20,6 +24,17 @@ async function fetchItemPrices(itemIds) {
     }
 }
 
+async function validateLocationAndSlot(params) {
+    try {
+        const response = await axios.post(`${CATALOG_SERVICE_URL}/catalog/locations/validate`, params);
+        return response.data;
+    } catch (error) {
+        console.error('Failed to validate location from Catalog Service:', error.response?.data || error.message);
+        return { valid: false, message: 'Validation failed' };
+    }
+}
+
 module.exports = {
-    fetchItemPrices
+    fetchItemPrices,
+    validateLocationAndSlot
 };

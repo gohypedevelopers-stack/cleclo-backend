@@ -97,6 +97,15 @@ model VendorProfile {
   termsAccepted    Boolean @default(false)
   slaAccepted      Boolean @default(false)
   isApproved       Boolean @default(false)
+
+  // Analytical cache fields for Admin Dashboard
+  totalRevenue     Float   @default(0)
+  commissionEarned Float   @default(0)
+  payoutPending    Float   @default(0)
+  slaScore         Float   @default(0)
+  rating           Float   @default(0)
+  issueRate        Float   @default(0)
+
   user             User    @relation(fields: [userId], references: [id])
 }
 

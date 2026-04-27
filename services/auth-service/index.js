@@ -14,6 +14,8 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 app.use('/auth', authRoutes);
 app.use('/admin', require('./src/routes/adminRoutes'));
+app.use('/admin/referral', require('./src/routes/adminReferralRoutes'));
+app.use('/admin/wallet', require('./src/routes/adminWalletConfigRoutes'));
 app.use('/vendor', require('./src/routes/vendorRoutes'));
 app.use('/tickets', require('./src/routes/supportRoutes'));
 app.use('/addresses', require('./src/routes/addressRoutes'));

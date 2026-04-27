@@ -32,24 +32,11 @@ router.post('/items', adminCatalogController.createItem);
 router.put('/items/:id', adminCatalogController.updateItem);
 router.delete('/items/:id', adminCatalogController.deleteItem);
 
-// Content Banners
-const adminContentController = require('../controllers/adminContentController');
+// Bulk Operations
+router.post('/items/bulk-upload', adminCatalogController.bulkUploadItems);
+router.post('/items/bulk-price-update', adminCatalogController.bulkPriceUpdate);
+router.post('/items/price-preview', adminCatalogController.pricePreview);
 
-router.get('/banners', adminContentController.getAllBanners);
-router.post('/banners', adminContentController.createBanner);
-router.put('/banners/:id', adminContentController.updateBanner);
-router.delete('/banners/:id', adminContentController.deleteBanner);
 
-// Content Videos
-router.get('/videos', adminContentController.getAllVideos);
-router.post('/videos', adminContentController.createVideo);
-router.put('/videos/:id', adminContentController.updateVideo);
-router.delete('/videos/:id', adminContentController.deleteVideo);
-
-// Campaigns
-router.get('/campaigns', adminContentController.getAllCampaigns);
-router.post('/campaigns', adminContentController.createCampaign);
-router.put('/campaigns/:id', adminContentController.updateCampaign);
-router.delete('/campaigns/:id', adminContentController.deleteCampaign);
 
 module.exports = router;

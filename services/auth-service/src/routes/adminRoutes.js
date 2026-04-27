@@ -5,6 +5,14 @@ const settlementController = require('../controllers/settlementController');
 const { ADMIN_ROLES } = require('../config/adminAccess');
 const { authenticateAdmin, authorizeAdminRoles } = require('../middleware/adminAuth');
 
+const {
+  getDashboardOverviewHandler,
+  getIssueAlertsHandler,
+  markAllIssuesReviewedHandler,
+  updateIssueAlertHandler,
+  getVendorWeeklyActivityHandler
+} = adminInsightsController;
+
 const router = express.Router();
 
 router.use(authenticateAdmin);
@@ -29,6 +37,15 @@ router.get(
     ADMIN_ROLES.FINANCE_ADMIN
   ),
   adminController.getDashboardStats
+);
+router.get(
+  '/vendors/weekly-activity',
+  authorizeAdminRoles(
+    ADMIN_ROLES.SUPER_ADMIN,
+    ADMIN_ROLES.OPERATIONS_ADMIN,
+    ADMIN_ROLES.FINANCE_ADMIN
+  ),
+  getVendorWeeklyActivityHandler
 );
 
 // ============================================
@@ -136,6 +153,11 @@ router.get(
   '/vendors/pending',
   authorizeAdminRoles(ADMIN_ROLES.SUPER_ADMIN, ADMIN_ROLES.OPERATIONS_ADMIN),
   adminController.getPendingVendors
+);
+router.get(
+  '/vendors/:id',
+  authorizeAdminRoles(ADMIN_ROLES.SUPER_ADMIN, ADMIN_ROLES.OPERATIONS_ADMIN, ADMIN_ROLES.FINANCE_ADMIN),
+  adminController.getVendorById
 );
 router.put(
   '/vendors/:id',

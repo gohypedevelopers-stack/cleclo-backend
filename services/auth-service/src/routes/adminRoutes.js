@@ -95,6 +95,15 @@ router.post(
   adminController.adjustWallet
 );
 
+// ============================================
+// LOYALTY MANAGEMENT
+// ============================================
+router.post(
+  '/users/:id/loyalty/adjust',
+  authorizeAdminRoles(ADMIN_ROLES.SUPER_ADMIN, ADMIN_ROLES.OPERATIONS_ADMIN),
+  adminController.adjustLoyaltyPoints
+);
+
 // Wallet Config
 router.get('/wallet/config', authorizeAdminRoles(ADMIN_ROLES.SUPER_ADMIN, ADMIN_ROLES.FINANCE_ADMIN), adminWalletConfigController.getPlatformConfig);
 router.put('/wallet/config', authorizeAdminRoles(ADMIN_ROLES.SUPER_ADMIN, ADMIN_ROLES.FINANCE_ADMIN), adminWalletConfigController.updatePlatformConfig);

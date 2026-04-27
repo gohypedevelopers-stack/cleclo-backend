@@ -30,12 +30,22 @@ const updatePlatformConfig = async (req, res) => {
         
         if (!config) {
             config = await prisma.walletPlatformConfig.create({
-                data: { minAddAmount, maxAddAmount, bonusEnabled, updatedByAdminId: req.admin?.userId }
+                data: { 
+                    minAddAmount, 
+                    maxAddAmount, 
+                    bonusEnabled, 
+                    updatedByAdminId: req.admin?.userId 
+                }
             });
         } else {
             config = await prisma.walletPlatformConfig.update({
                 where: { id: config.id },
-                data: { minAddAmount, maxAddAmount, bonusEnabled, updatedByAdminId: req.admin?.userId }
+                data: { 
+                    minAddAmount, 
+                    maxAddAmount, 
+                    bonusEnabled, 
+                    updatedByAdminId: req.admin?.userId 
+                }
             });
         }
         

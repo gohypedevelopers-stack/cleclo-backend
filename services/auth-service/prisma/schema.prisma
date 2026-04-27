@@ -1,11 +1,341 @@
 generator client {
-  provider = "prisma-client-js"
+  provider   = "prisma-client-js"
   engineType = "binary"
 }
 
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+}
+
+model User {
+  id                  String               @id @default(uuid())
+  name                String
+  email               String               @unique
+  phone               String               @unique
+  password            String
+  role                String               @default("customer")
+  adminRole           String?              @default("super_admin")
+  status              String               @default("active")
+  userType            String               @default("regular")
+  loyaltyPoints       Int                  @default(0)
+  loyaltyTier         String               @default("Silver")
+  isVerified          Boolean              @default(false)
+  lastAdminLoginAt    DateTime?
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  addresses           Address[]
+  adminAuthChallenges AdminAuthChallenge[] @relation("AdminChallengeUser")
+  adminLoginAttempts  AdminLoginAttempt[]  @relation("AdminAttemptUser")
+  adminLoginEvents    AdminLoginEvent[]    @relation("AdminEventUser")
+  outlets             Outlet[]
+  paymentMethods      PaymentMethod[]
+  receivedTickets     SupportTicket[]      @relation("TicketTarget")
+  createdTickets      SupportTicket[]      @relation("TicketCreator")
+  vendorProfile       VendorProfile?
+  settlements         VendorSettlement[]
+  wallet              Wallet?
+  loyaltyHistory      LoyaltyHistory[]
+}
+
+model PaymentMethod {
+  id             String   @id @default(uuid())
+  userId         String
+  type           String   @default("card")
+  cardType       String?
+  lastFour       String?
+  cardHolderName String?
+  expiryMonth    String?
+  expiryYear     String?
+  upiId          String?
+  isDefault      Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  user           User     @relation(fields: [userId], references: [id])
+}
+
+model Address {
+  id          String @id @default(uuid())
+  userId      String
+  addressLine String
+  lat         Float?
+  lng         Float?
+  type        String @default("home")
+  user        User   @relation(fields: [userId], references: [id])
+}
+
+model Outlet {
+  id             String   @id @default(uuid())
+  vendorId       String
+  name           String
+  address        String
+  lat            Float
+  lng            Float
+  operatingHours String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  vendor         User     @relation(fields: [vendorId], references: [id])
+}
+
+model VendorProfile {
+  id               String  @id @default(uuid())
+  userId           String  @unique
+  businessName     String
+  gstRegistered    Boolean @default(false)
+  gstNumber        String?
+  businessType     String?
+  servicesOffered  String?
+  dailyCapacity    Int?
+  commissionRate   Float   @default(18)
+  bankHolderName   String?
+  bankName         String?
+  accountNumber    String?
+  ifscCode         String?
+  bankVerified     Boolean @default(false)
+  businessProofUrl String?
+  ownerIdProofUrl  String?
+  termsAccepted    Boolean @default(false)
+  slaAccepted      Boolean @default(false)
+  isApproved       Boolean @default(false)
+  user             User    @relation(fields: [userId], references: [id])
+}
+
+model Wallet {
+  id           String              @id @default(uuid())
+  userId       String              @unique
+  balance      Float               @default(0)
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+  user         User                @relation(fields: [userId], references: [id])
+  creditLots   WalletCreditLot[]
+  transactions WalletTransaction[]
+}
+
+model WalletTransaction {
+  id        String   @id @default(uuid())
+  walletId  String
+  amount    Float
+  type      String
+  note      String?
+  createdAt DateTime @default(now())
+  wallet    Wallet   @relation(fields: [walletId], references: [id])
+}
+
+model WalletPlatformConfig {
+  id                 String   @id @default(uuid())
+  minAddAmount       Float    @default(100)
+  maxAddAmount       Float    @default(10000)
+  bonusEnabled       Boolean  @default(true)
+  updatedByAdminId   String?
+  updatedByAdminName String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+model WalletRewardRule {
+  id                 String    @id @default(uuid())
+  ruleType           String
+  rewardMode         String
+  rewardValue        Float
+  minOrderValue      Float?    @default(0)
+  minRechargeValue   Float?    @default(0)
+  maxRewardAmount    Float?
+  targetCityCodes    String[]
+  firstOrderOnly     Boolean   @default(false)
+  expiryDays         Int?
+  priorityRank       Int       @default(0)
+  isActive           Boolean   @default(true)
+  startAt            DateTime?
+  endAt              DateTime?
+  createdByAdminId   String?
+  createdByAdminName String?
+  updatedByAdminId   String?
+  updatedByAdminName String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+}
+
+model WalletCreditLot {
+  id                String    @id @default(uuid())
+  walletId          String
+  sourceType        String
+  sourceReferenceId String?
+  originalAmount    Float
+  remainingAmount   Float
+  isPromotional     Boolean   @default(false)
+  expiresAt         DateTime?
+  status            String    @default("active")
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  wallet            Wallet    @relation(fields: [walletId], references: [id])
+}
+
+model ReferralCampaign {
+  id                   String    @id @default(uuid())
+  title                String
+  bannerTitle          String?
+  bannerSubtitle       String?
+  bannerImageUrl       String?
+  referrerRewardAmount Float     @default(0)
+  refereeRewardAmount  Float     @default(0)
+  firstOrderRequired   Boolean   @default(true)
+  minimumCartValue     Float     @default(0)
+  targetCityCodes      String[]
+  rewardExpiryDays     Int       @default(30)
+  maxReferralsPerUser  Int?
+  isActive             Boolean   @default(true)
+  startAt              DateTime?
+  endAt                DateTime?
+  createdByAdminId     String?
+  createdByAdminName   String?
+  updatedByAdminId     String?
+  updatedByAdminName   String?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+}
+
+model ReferralRedemption {
+  id                  String    @id @default(uuid())
+  campaignId          String
+  referrerUserId      String
+  refereeUserId       String
+  refereeFirstOrderId String?
+  rewardGrantedAt     DateTime?
+  status              String    @default("pending")
+  createdAt           DateTime  @default(now())
+}
+
+model VendorSettlement {
+  id                   String                 @id @default(uuid())
+  vendorId             String
+  amount               Float
+  grossAmount          Float                  @default(0)
+  commissionAmount     Float                  @default(0)
+  orderCount           Int                    @default(0)
+  status               VendorSettlementStatus @default(PENDING)
+  note                 String?
+  failureReason        String?
+  transactionReference String?
+  periodStart          DateTime?
+  periodEnd            DateTime?
+  processedAt          DateTime?
+  paidAt               DateTime?
+  failedAt             DateTime?
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+  isAutoReconciled     Boolean                @default(true)
+  paymentMode          String?
+  penalties            Float                  @default(0)
+  refundAdjustments    Float                  @default(0)
+  settlementCycle      String                 @default("weekly")
+  taxDeducted          Float                  @default(0)
+  vendor               User                   @relation(fields: [vendorId], references: [id])
+
+  @@index([status, createdAt])
+  @@index([vendorId, status])
+}
+
+model SupportTicket {
+  id          String    @id @default(uuid())
+  userId      String
+  targetId    String?
+  subject     String
+  category    String
+  message     String
+  priority    String    @default("medium")
+  status      String    @default("open")
+  isEscalated Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  resolvedAt  DateTime?
+  target      User?     @relation("TicketTarget", fields: [targetId], references: [id])
+  user        User      @relation("TicketCreator", fields: [userId], references: [id])
+}
+
+model AdminAuthChallenge {
+  id              String    @id @default(uuid())
+  userId          String?
+  identifier      String
+  requestedRole   String
+  challengeType   String
+  deliveryChannel String?
+  prompt          String?
+  secretHash      String
+  maskedTarget    String?
+  expiresAt       DateTime
+  consumedAt      DateTime?
+  createdAt       DateTime  @default(now())
+  user            User?     @relation("AdminChallengeUser", fields: [userId], references: [id])
+
+  @@index([identifier, challengeType, createdAt])
+}
+
+model AdminLoginAttempt {
+  id            String   @id @default(uuid())
+  userId        String?
+  identifier    String
+  requestedRole String
+  status        String   @default("failed")
+  failureReason String?
+  ipAddress     String?
+  locationLabel String?
+  userAgent     String?
+  createdAt     DateTime @default(now())
+  user          User?    @relation("AdminAttemptUser", fields: [userId], references: [id])
+
+  @@index([identifier, createdAt])
+}
+
+model AdminLoginEvent {
+  id              String   @id @default(uuid())
+  userId          String
+  adminRole       String
+  deliveryChannel String?
+  ipAddress       String?
+  locationLabel   String?
+  city            String?
+  region          String?
+  country         String?
+  userAgent       String?
+  alertMessage    String?
+  createdAt       DateTime @default(now())
+  user            User     @relation("AdminEventUser", fields: [userId], references: [id])
+
+  @@index([userId, createdAt])
+}
+
+model AdminIssueAlert {
+  id                     String                  @id @default(uuid())
+  orderId                String?                 @unique
+  supportTicketId        String?                 @unique
+  customerId             String?
+  vendorId               String?
+  issueType              String
+  severity               AdminIssueAlertSeverity @default(MEDIUM)
+  status                 AdminIssueAlertStatus   @default(OPEN)
+  unread                 Boolean                 @default(true)
+  city                   String?
+  description            String
+  summary                String
+  assignedTo             String?
+  rootCause              String?
+  refundStatus           AdminIssueRefundStatus  @default(NOT_INITIATED)
+  escalatedTo            String?
+  autoEscalateAfterHours Int                     @default(4)
+  financialRiskLabel     String?                 @default("Estimated Refund Risk")
+  financialRiskAmount    Float                   @default(0)
+  vendorRiskLevel        String?
+  vendorRiskTrigger      String?
+  source                 String                  @default("order")
+  metadata               Json?
+  damageClaim            Json?
+  reviewedAt             DateTime?
+  resolvedAt             DateTime?
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
+
+  @@index([status, updatedAt])
+  @@index([vendorId, createdAt])
 }
 
 enum VendorSettlementStatus {
@@ -35,330 +365,12 @@ enum AdminIssueRefundStatus {
   COMPLETED     @map("Completed")
 }
 
-model User {
-  id        String    @id @default(uuid())
-  name      String
-  email     String    @unique
-  phone     String    @unique
-  password  String
-  role      String    @default("customer") // customer, rider, vendor, admin
-  adminRole String?   @default("super_admin") // super_admin, operations_admin, finance_admin
-  status    String    @default("active")   // active, blocked, suspended
-  userType  String    @default("regular")  // regular, vip, top_spender, new
-  isVerified Boolean  @default(false)
-  lastAdminLoginAt DateTime?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  addresses Address[]
-  paymentMethods PaymentMethod[]
-  outlets   Outlet[]
-  vendorProfile VendorProfile?
-  wallet    Wallet?
-  settlements VendorSettlement[]
-  createdTickets SupportTicket[] @relation("TicketCreator")
-  receivedTickets SupportTicket[] @relation("TicketTarget")
-  adminAuthChallenges AdminAuthChallenge[] @relation("AdminChallengeUser")
-  adminLoginAttempts AdminLoginAttempt[] @relation("AdminAttemptUser")
-  adminLoginEvents AdminLoginEvent[] @relation("AdminEventUser")
-}
-
-model PaymentMethod {
-  id            String   @id @default(uuid())
-  userId        String
-  user          User     @relation(fields: [userId], references: [id])
-  type          String   @default("card") // card, upi
-  cardType      String?  // visa, mastercard, rupay
-  lastFour      String?  // Last 4 digits only (RBI compliant)
-  cardHolderName String?
-  expiryMonth   String?
-  expiryYear    String?
-  upiId         String?  // For UPI type
-  isDefault     Boolean  @default(false)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-}
-
-model Address {
-  id          String   @id @default(uuid())
-  userId      String
-  user        User     @relation(fields: [userId], references: [id])
-  addressLine String
-  lat         Float?
-  lng         Float?
-  type        String   @default("home") // home, work, other
-}
-
-model Outlet {
+model LoyaltyHistory {
   id        String   @id @default(uuid())
-  vendorId  String
-  vendor    User     @relation(fields: [vendorId], references: [id])
-  name      String
-  address   String
-  lat       Float
-  lng       Float
-  operatingHours String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  points    Int
+  type      String   // earned, redeemed
+  reason    String?
   createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-model VendorProfile {
-  id              String  @id @default(uuid())
-  userId          String  @unique
-  user            User    @relation(fields: [userId], references: [id])
-  businessName    String
-  gstRegistered   Boolean @default(false)
-  gstNumber       String?
-  businessType    String? // Sole Proprietorship, LLP, etc
-  servicesOffered String? // Comma separated: Dry Clean, Wash Only, Iron
-  dailyCapacity   Int?
-  commissionRate  Float   @default(18)
-  bankHolderName  String?
-  bankName        String?
-  accountNumber   String?
-  ifscCode        String?
-  bankVerified    Boolean @default(false)
-  businessProofUrl String?
-  ownerIdProofUrl  String?
-  termsAccepted   Boolean @default(false)
-  slaAccepted     Boolean @default(false)
-  isApproved      Boolean @default(false) // Admin approval
-}
-
-// Wallet System
-model Wallet {
-  id           String   @id @default(uuid())
-  userId       String   @unique
-  user         User     @relation(fields: [userId], references: [id])
-  balance      Float    @default(0)
-  transactions WalletTransaction[]
-  creditLots   WalletCreditLot[]
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-}
-
-model WalletTransaction {
-  id        String   @id @default(uuid())
-  walletId  String
-  wallet    Wallet   @relation(fields: [walletId], references: [id])
-  amount    Float
-  type      String   // credit, debit
-  note      String?
-  createdAt DateTime @default(now())
-}
-
-model WalletPlatformConfig {
-  id            String   @id @default(uuid())
-  minAddAmount  Float    @default(100)
-  maxAddAmount  Float    @default(10000)
-  bonusEnabled  Boolean  @default(true)
-  updatedByAdminId   String?
-  updatedByAdminName String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-}
-
-model WalletRewardRule {
-  id            String   @id @default(uuid())
-  ruleType      String   // order_cashback, recharge_bonus, referral_referrer, referral_referee
-  rewardMode    String   // percentage, fixed_amount
-  rewardValue   Float
-  minOrderValue Float?   @default(0)
-  minRechargeValue Float? @default(0)
-  maxRewardAmount  Float?
-  targetCityCodes  String[]
-  firstOrderOnly   Boolean @default(false)
-  expiryDays       Int?
-  priorityRank     Int     @default(0)
-  isActive         Boolean @default(true)
-  startAt          DateTime?
-  endAt            DateTime?
-  createdByAdminId   String?
-  createdByAdminName String?
-  updatedByAdminId   String?
-  updatedByAdminName String?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
-}
-
-model WalletCreditLot {
-  id                String   @id @default(uuid())
-  walletId          String
-  wallet            Wallet   @relation(fields: [walletId], references: [id])
-  sourceType        String   // cash_recharge, cashback, recharge_bonus, referral_bonus, manual_credit
-  sourceReferenceId String?
-  originalAmount    Float
-  remainingAmount   Float
-  isPromotional     Boolean  @default(false)
-  expiresAt         DateTime?
-  status            String   @default("active") // active, consumed, expired
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-}
-
-model ReferralCampaign {
-  id                   String   @id @default(uuid())
-  title                String
-  bannerTitle          String?
-  bannerSubtitle       String?
-  bannerImageUrl       String?
-  referrerRewardAmount Float    @default(0)
-  refereeRewardAmount  Float    @default(0)
-  firstOrderRequired   Boolean  @default(true)
-  minimumCartValue     Float    @default(0)
-  targetCityCodes      String[]
-  rewardExpiryDays     Int      @default(30)
-  maxReferralsPerUser  Int?
-  isActive             Boolean  @default(true)
-  startAt              DateTime?
-  endAt                DateTime?
-  createdByAdminId     String?
-  createdByAdminName   String?
-  updatedByAdminId     String?
-  updatedByAdminName   String?
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
-}
-
-model ReferralRedemption {
-  id                  String   @id @default(uuid())
-  campaignId          String
-  referrerUserId      String
-  refereeUserId       String
-  refereeFirstOrderId String?
-  rewardGrantedAt     DateTime?
-  status              String   @default("pending") // pending, completed, failed
-  createdAt           DateTime @default(now())
-}
-
-// Vendor Settlements/Payouts
-model VendorSettlement {
-  id                   String                 @id @default(uuid())
-  vendorId             String
-  vendor               User                   @relation(fields: [vendorId], references: [id])
-  amount               Float
-  grossAmount          Float                  @default(0)
-  commissionAmount     Float                  @default(0)
-  orderCount           Int                    @default(0)
-  status               VendorSettlementStatus @default(PENDING)
-  note                 String?
-  failureReason        String?
-  transactionReference String?
-  periodStart          DateTime?
-  periodEnd            DateTime?
-  processedAt          DateTime?
-  paidAt               DateTime?
-  failedAt             DateTime?
-  createdAt            DateTime               @default(now())
-  updatedAt            DateTime               @updatedAt
-
-  @@index([status, createdAt])
-  @@index([vendorId, status])
-}
-
-
-
-// ... (keep matches for context if needed, but easier to target file end for SupportTicket)
-
-// Support System
-model SupportTicket {
-  id          String    @id @default(uuid())
-  userId      String    // Creator
-  user        User      @relation("TicketCreator", fields: [userId], references: [id])
-  targetId    String?   // If null, for Admin. If set, for specific Vendor
-  target      User?     @relation("TicketTarget", fields: [targetId], references: [id])
-  subject     String
-  category    String    // orders, payments, account, technical
-  message     String
-  priority    String    @default("medium") // low, medium, high
-  status      String    @default("open")   // open, in_progress, resolved, closed
-  isEscalated Boolean   @default(false)    // True if escalated to admin
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  resolvedAt  DateTime?
-}
-
-model AdminAuthChallenge {
-  id              String   @id @default(uuid())
-  userId          String?
-  user            User?    @relation("AdminChallengeUser", fields: [userId], references: [id])
-  identifier      String
-  requestedRole   String
-  challengeType   String   // otp, captcha
-  deliveryChannel String?  // email, whatsapp
-  prompt          String?
-  secretHash      String
-  maskedTarget    String?
-  expiresAt       DateTime
-  consumedAt      DateTime?
-  createdAt       DateTime @default(now())
-
-  @@index([identifier, challengeType, createdAt])
-}
-
-model AdminLoginAttempt {
-  id            String   @id @default(uuid())
-  userId        String?
-  user          User?    @relation("AdminAttemptUser", fields: [userId], references: [id])
-  identifier    String
-  requestedRole String
-  status        String   @default("failed") // failed, captcha_required, blocked, otp_sent, success
-  failureReason String?
-  ipAddress     String?
-  locationLabel String?
-  userAgent     String?
-  createdAt     DateTime @default(now())
-
-  @@index([identifier, createdAt])
-}
-
-model AdminLoginEvent {
-  id              String   @id @default(uuid())
-  userId          String
-  user            User     @relation("AdminEventUser", fields: [userId], references: [id])
-  adminRole       String
-  deliveryChannel String?
-  ipAddress       String?
-  locationLabel   String?
-  city            String?
-  region          String?
-  country         String?
-  userAgent       String?
-  alertMessage    String?
-  createdAt       DateTime @default(now())
-
-  @@index([userId, createdAt])
-}
-
-model AdminIssueAlert {
-  id                    String   @id @default(uuid())
-  orderId               String?  @unique
-  supportTicketId       String?  @unique
-  customerId            String?
-  vendorId              String?
-  issueType             String
-  severity              AdminIssueAlertSeverity @default(MEDIUM)
-  status                AdminIssueAlertStatus   @default(OPEN)
-  unread                Boolean  @default(true)
-  city                  String?
-  description           String
-  summary               String
-  assignedTo            String?
-  rootCause             String?
-  refundStatus          AdminIssueRefundStatus @default(NOT_INITIATED)
-  escalatedTo           String?
-  autoEscalateAfterHours Int     @default(4)
-  financialRiskLabel    String?  @default("Estimated Refund Risk")
-  financialRiskAmount   Float    @default(0)
-  vendorRiskLevel       String?
-  vendorRiskTrigger     String?
-  source                String   @default("order") // order, support_ticket
-  metadata              Json?
-  damageClaim           Json?
-  reviewedAt            DateTime?
-  resolvedAt            DateTime?
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
-
-  @@index([status, updatedAt])
-  @@index([vendorId, createdAt])
 }

@@ -182,6 +182,52 @@ const adjustWallet = async (req, res) => {
     }
 };
 
+// Adjust loyalty points
+const adjustLoyaltyPoints = async (req, res) => {
+    try {
+        const { id } = req.params; // userId
+        const { points, type, reason } = req.body; // type: 'earned' or 'redeemed'
+
+        const user = await prisma.user.findUnique({ where: { id } });
+        if (!user) return res.status(404).json({ error: 'User not found' });
+
+        const newPoints = type === 'earned'
+            ? user.loyaltyPoints + parseInt(points)
+            : user.loyaltyPoints - parseInt(points);
+
+        if (newPoints < 0) {
+            return res.status(400).json({ error: 'Insufficient loyalty points' });
+        }
+
+        // Determine Tier based on total points
+        let newTier = "Silver";
+        if (newPoints >= 5000) newTier = "Platinum";
+        else if (newPoints >= 1000) newTier = "Gold";
+
+        const [updatedUser, history] = await prisma.$transaction([
+            prisma.user.update({
+                where: { id },
+                data: { 
+                    loyaltyPoints: newPoints,
+                    loyaltyTier: newTier
+                }
+            }),
+            prisma.loyaltyHistory.create({
+                data: {
+                    userId: id,
+                    points: parseInt(points),
+                    type,
+                    reason
+                }
+            })
+        ]);
+
+        res.json({ message: 'Loyalty points adjusted', user: updatedUser, history });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
 // ============================================
 // VENDOR MANAGEMENT
 // ============================================
@@ -326,17 +372,11 @@ const getDashboardStats = async (req, res) => {
             prisma.user.count({ where: { role: 'vendor', vendorProfile: { isApproved: false } } })
         ]);
 
-        // Note: Orders are in a different service, so we return what we can
-        // The frontend should call order-service separately for order stats
-
         res.json({
             totalUsers,
             activeUsers,
             totalVendors,
             pendingVendors,
-            // These would need to be fetched from order-service
-            // totalOrders: 0,
-            // revenue: 0
         });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -353,6 +393,8 @@ module.exports = {
     // Wallet Management
     getUserWallet,
     adjustWallet,
+    // Loyalty
+    adjustLoyaltyPoints,
     // Vendor Management
     getPendingVendors,
     getAllVendors,

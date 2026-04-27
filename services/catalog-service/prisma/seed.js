@@ -1,287 +1,52 @@
 const { PrismaClient } = require('@prisma/client');
-
 const prisma = new PrismaClient();
 
 async function main() {
-    console.log('🌱 Seeding Catalog Service database...');
+    console.log('🌱 UPSERTING Catalog Service database with financial test cases...');
 
-    // 1. Create Services
-    const dryCleanService = await prisma.service.create({
-        data: {
-            name: 'Dry Clean',
-            slug: 'dry-clean',
-        },
-    });
+    // 1. Categories
+    const catMen = await prisma.category.upsert({ where: { name: 'Men' }, update: {}, create: { name: 'Men', description: "Men's Clothing", iconUrl: 'men.png', isActive: true }});
+    const catWomen = await prisma.category.upsert({ where: { name: 'Women' }, update: {}, create: { name: 'Women', description: "Women's Clothing", iconUrl: 'women.png', isActive: true }});
+    const catHome = await prisma.category.upsert({ where: { name: 'Home' }, update: {}, create: { name: 'Home', description: "Home Furnishings", iconUrl: 'home.png', isActive: true }});
 
-    const washService = await prisma.service.create({
-        data: {
-            name: 'Wash Only',
-            slug: 'wash-only',
-        },
-    });
+    // 2. SubCategories
+    const subShirts = await prisma.subCategory.upsert({ where: { name: 'Shirts & T-Shirts' }, update: {}, create: { categoryId: catMen.id, name: 'Shirts & T-Shirts', isActive: true }});
+    const subEthnic = await prisma.subCategory.upsert({ where: { name: 'Ethnic Wear' }, update: {}, create: { categoryId: catWomen.id, name: 'Ethnic Wear', isActive: true }});
+    const subBed = await prisma.subCategory.upsert({ where: { name: 'Bed & Bath' }, update: {}, create: { categoryId: catHome.id, name: 'Bed & Bath', isActive: true }});
 
-    const ironService = await prisma.service.create({
-        data: {
-            name: 'Iron',
-            slug: 'iron',
-        },
-    });
+    // 3. Service Items (With intentional margin variations including a LOSS case)
+    const items = [
+        { name: 'Cotton Shirt - Wash & Iron', subCat: subShirts.id, cp: 60, vs: 45 },  // 25% margin
+        { name: 'T-Shirt - Dry Clean', subCat: subShirts.id, cp: 120, vs: 80 },        // 33% margin
+        { name: 'Silk Saree - Premium Clean', subCat: subEthnic.id, cp: 450, vs: 300 },// 33% margin
+        { name: 'Lehenga - Heavy Work', subCat: subEthnic.id, cp: 1200, vs: 1200 },    // 0% margin (Loss after GST)
+        { name: 'Designer Blouse', subCat: subEthnic.id, cp: 250, vs: 280 },           // Negative margin! (Direct loss)
+        { name: 'Bedsheet - Double', subCat: subBed.id, cp: 150, vs: 100 },            // 33% margin
+        { name: 'Comforter/Blanket', subCat: subBed.id, cp: 350, vs: 250 },            // 28% margin
+    ];
 
-    // 2. Create Categories for Dry Clean
-    const dryCleanMen = await prisma.category.create({
-        data: {
-            serviceId: dryCleanService.id,
-            name: 'Men',
-            order: 1,
-        },
-    });
+    for (const item of items) {
+        // Find existing to avoid dupes since we don't have unique on name
+        const existing = await prisma.serviceItem.findFirst({ where: { name: item.name } });
+        if (existing) {
+            await prisma.serviceItem.update({
+                where: { id: existing.id },
+                data: { customerPrice: item.cp, vendorShare: item.vs, isActive: true }
+            });
+        } else {
+            await prisma.serviceItem.create({
+                data: {
+                    subCategoryId: item.subCat,
+                    name: item.name,
+                    description: `Standard ${item.name}`,
+                    customerPrice: item.cp,
+                    vendorShare: item.vs,
+                    isActive: true
+                }
+            });
+        }
+    }
 
-    const dryCleanWomen = await prisma.category.create({
-        data: {
-            serviceId: dryCleanService.id,
-            name: 'Women',
-            order: 2,
-        },
-    });
-
-    const dryCleanKids = await prisma.category.create({
-        data: {
-            serviceId: dryCleanService.id,
-            name: 'Kids',
-            order: 3,
-        },
-    });
-
-    const dryCleanHousehold = await prisma.category.create({
-        data: {
-            serviceId: dryCleanService.id,
-            name: 'Household',
-            order: 4,
-        },
-    });
-
-    // 3. Create Categories for Wash Only
-    const washMen = await prisma.category.create({
-        data: {
-            serviceId: washService.id,
-            name: 'Men',
-            order: 1,
-        },
-    });
-
-    const washWomen = await prisma.category.create({
-        data: {
-            serviceId: washService.id,
-            name: 'Women',
-            order: 2,
-        },
-    });
-
-    const washKids = await prisma.category.create({
-        data: {
-            serviceId: washService.id,
-            name: 'Kids',
-            order: 3,
-        },
-    });
-
-    const washHousehold = await prisma.category.create({
-        data: {
-            serviceId: washService.id,
-            name: 'Household',
-            order: 4,
-        },
-    });
-
-    // 4. Create Categories for Iron
-    const ironMen = await prisma.category.create({
-        data: {
-            serviceId: ironService.id,
-            name: 'Men',
-            order: 1,
-        },
-    });
-
-    const ironWomen = await prisma.category.create({
-        data: {
-            serviceId: ironService.id,
-            name: 'Women',
-            order: 2,
-        },
-    });
-
-    const ironKids = await prisma.category.create({
-        data: {
-            serviceId: ironService.id,
-            name: 'Kids',
-            order: 3,
-        },
-    });
-
-    const ironHousehold = await prisma.category.create({
-        data: {
-            serviceId: ironService.id,
-            name: 'Household',
-            order: 4,
-        },
-    });
-
-    // 5. Create Items for Dry Clean - Men
-    await prisma.item.createMany({
-        data: [
-            { categoryId: dryCleanMen.id, name: 'Shirt', basePrice: 50, imageUrl: null },
-            { categoryId: dryCleanMen.id, name: 'T-Shirt', basePrice: 40, imageUrl: null },
-            { categoryId: dryCleanMen.id, name: 'Trousers', basePrice: 60, imageUrl: null },
-            { categoryId: dryCleanMen.id, name: 'Jeans', basePrice: 70, imageUrl: null },
-            { categoryId: dryCleanMen.id, name: 'Suit (2 Pcs)', basePrice: 250, imageUrl: null },
-            { categoryId: dryCleanMen.id, name: 'Blazer', basePrice: 150, imageUrl: null },
-            { categoryId: dryCleanMen.id, name: 'Kurta', basePrice: 80, imageUrl: null },
-            { categoryId: dryCleanMen.id, name: 'Sherwani', basePrice: 300, imageUrl: null },
-            { categoryId: dryCleanMen.id, name: 'Jacket', basePrice: 120, imageUrl: null },
-            { categoryId: dryCleanMen.id, name: 'Sweater', basePrice: 90, imageUrl: null },
-        ],
-    });
-
-    // 6. Create Items for Dry Clean - Women
-    await prisma.item.createMany({
-        data: [
-            { categoryId: dryCleanWomen.id, name: 'Shirt', basePrice: 50, imageUrl: null },
-            { categoryId: dryCleanWomen.id, name: 'T-Shirt', basePrice: 40, imageUrl: null },
-            { categoryId: dryCleanWomen.id, name: 'Trousers', basePrice: 60, imageUrl: null },
-            { categoryId: dryCleanWomen.id, name: 'Jeans', basePrice: 70, imageUrl: null },
-            { categoryId: dryCleanWomen.id, name: 'Saree (Cotton)', basePrice: 100, imageUrl: null },
-            { categoryId: dryCleanWomen.id, name: 'Saree (Silk)', basePrice: 150, imageUrl: null },
-            { categoryId: dryCleanWomen.id, name: 'Lehenga', basePrice: 400, imageUrl: null },
-            { categoryId: dryCleanWomen.id, name: 'Salwar Kameez', basePrice: 120, imageUrl: null },
-            { categoryId: dryCleanWomen.id, name: 'Dress', basePrice: 100, imageUrl: null },
-            { categoryId: dryCleanWomen.id, name: 'Blazer', basePrice: 140, imageUrl: null },
-            { categoryId: dryCleanWomen.id, name: 'Kurti', basePrice: 60, imageUrl: null },
-            { categoryId: dryCleanWomen.id, name: 'Sweater', basePrice: 85, imageUrl: null },
-        ],
-    });
-
-    // 7. Create Items for Dry Clean - Kids
-    await prisma.item.createMany({
-        data: [
-            { categoryId: dryCleanKids.id, name: 'T-Shirt', basePrice: 30, imageUrl: null },
-            { categoryId: dryCleanKids.id, name: 'Shirt', basePrice: 35, imageUrl: null },
-            { categoryId: dryCleanKids.id, name: 'Trousers', basePrice: 45, imageUrl: null },
-            { categoryId: dryCleanKids.id, name: 'Jeans', basePrice: 50, imageUrl: null },
-            { categoryId: dryCleanKids.id, name: 'Dress', basePrice: 60, imageUrl: null },
-            { categoryId: dryCleanKids.id, name: 'Jacket', basePrice: 80, imageUrl: null },
-            { categoryId: dryCleanKids.id, name: 'Kurta Set', basePrice: 90, imageUrl: null },
-        ],
-    });
-
-    // 8. Create Items for Dry Clean - Household
-    await prisma.item.createMany({
-        data: [
-            { categoryId: dryCleanHousehold.id, name: 'Bedsheet Single', basePrice: 80, imageUrl: null },
-            { categoryId: dryCleanHousehold.id, name: 'Bedsheet Double', basePrice: 120, imageUrl: null },
-            { categoryId: dryCleanHousehold.id, name: 'Blanket Single', basePrice: 150, imageUrl: null },
-            { categoryId: dryCleanHousehold.id, name: 'Blanket Double', basePrice: 200, imageUrl: null },
-            { categoryId: dryCleanHousehold.id, name: 'Curtain (per panel)', basePrice: 100, imageUrl: null },
-            { categoryId: dryCleanHousehold.id, name: 'Sofa Cover', basePrice: 250, imageUrl: null },
-            { categoryId: dryCleanHousehold.id, name: 'Carpet (per sq ft)', basePrice: 15, imageUrl: null },
-        ],
-    });
-
-    // 9. Create Items for Wash Only - Men
-    await prisma.item.createMany({
-        data: [
-            { categoryId: washMen.id, name: 'T-Shirt', basePrice: 25, imageUrl: null },
-            { categoryId: washMen.id, name: 'Shirt', basePrice: 30, imageUrl: null },
-            { categoryId: washMen.id, name: 'Jeans', basePrice: 40, imageUrl: null },
-            { categoryId: washMen.id, name: 'Trousers', basePrice: 35, imageUrl: null },
-            { categoryId: washMen.id, name: 'Shorts', basePrice: 25, imageUrl: null },
-            { categoryId: washMen.id, name: 'Track Pants', basePrice: 30, imageUrl: null },
-            { categoryId: washMen.id, name: 'Kurta', basePrice: 50, imageUrl: null },
-        ],
-    });
-
-    // 10. Create Items for Wash Only - Women
-    await prisma.item.createMany({
-        data: [
-            { categoryId: washWomen.id, name: 'T-Shirt', basePrice: 25, imageUrl: null },
-            { categoryId: washWomen.id, name: 'Top', basePrice: 30, imageUrl: null },
-            { categoryId: washWomen.id, name: 'Jeans', basePrice: 40, imageUrl: null },
-            { categoryId: washWomen.id, name: 'Leggings', basePrice: 25, imageUrl: null },
-            { categoryId: washWomen.id, name: 'Kurti', basePrice: 35, imageUrl: null },
-            { categoryId: washWomen.id, name: 'Salwar Kameez', basePrice: 70, imageUrl: null },
-        ],
-    });
-
-    // 11. Create Items for Wash Only - Kids
-    await prisma.item.createMany({
-        data: [
-            { categoryId: washKids.id, name: 'T-Shirt', basePrice: 20, imageUrl: null },
-            { categoryId: washKids.id, name: 'Shirt', basePrice: 22, imageUrl: null },
-            { categoryId: washKids.id, name: 'Shorts', basePrice: 18, imageUrl: null },
-            { categoryId: washKids.id, name: 'Jeans', basePrice: 30, imageUrl: null },
-        ],
-    });
-
-    // 12. Create Items for Wash Only - Household
-    await prisma.item.createMany({
-        data: [
-            { categoryId: washHousehold.id, name: 'Bedsheet Single', basePrice: 50, imageUrl: null },
-            { categoryId: washHousehold.id, name: 'Bedsheet Double', basePrice: 70, imageUrl: null },
-            { categoryId: washHousehold.id, name: 'Pillow Cover', basePrice: 15, imageUrl: null },
-            { categoryId: washHousehold.id, name: 'Towel', basePrice: 25, imageUrl: null },
-        ],
-    });
-
-    // 13. Create Items for Iron - Men
-    await prisma.item.createMany({
-        data: [
-            { categoryId: ironMen.id, name: 'Shirt', basePrice: 15, imageUrl: null },
-            { categoryId: ironMen.id, name: 'T-Shirt', basePrice: 10, imageUrl: null },
-            { categoryId: ironMen.id, name: 'Trousers', basePrice: 20, imageUrl: null },
-            { categoryId: ironMen.id, name: 'Jeans', basePrice: 25, imageUrl: null },
-            { categoryId: ironMen.id, name: 'Kurta', basePrice: 25, imageUrl: null },
-        ],
-    });
-
-    // 14. Create Items for Iron - Women
-    await prisma.item.createMany({
-        data: [
-            { categoryId: ironWomen.id, name: 'Shirt', basePrice: 15, imageUrl: null },
-            { categoryId: ironWomen.id, name: 'Top', basePrice: 12, imageUrl: null },
-            { categoryId: ironWomen.id, name: 'Saree', basePrice: 40, imageUrl: null },
-            { categoryId: ironWomen.id, name: 'Salwar Kameez', basePrice: 35, imageUrl: null },
-            { categoryId: ironWomen.id, name: 'Kurti', basePrice: 20, imageUrl: null },
-        ],
-    });
-
-    // 15. Create Items for Iron - Kids
-    await prisma.item.createMany({
-        data: [
-            { categoryId: ironKids.id, name: 'T-Shirt', basePrice: 8, imageUrl: null },
-            { categoryId: ironKids.id, name: 'Shirt', basePrice: 10, imageUrl: null },
-            { categoryId: ironKids.id, name: 'Shorts', basePrice: 8, imageUrl: null },
-        ],
-    });
-
-    // 16. Create Items for Iron - Household
-    await prisma.item.createMany({
-        data: [
-            { categoryId: ironHousehold.id, name: 'Bedsheet Single', basePrice: 25, imageUrl: null },
-            { categoryId: ironHousehold.id, name: 'Bedsheet Double', basePrice: 35, imageUrl: null },
-            { categoryId: ironHousehold.id, name: 'Pillow Cover', basePrice: 8, imageUrl: null },
-        ],
-    });
-
-    console.log('✅ Catalog Service seeding completed!');
-    console.log(`   - Created 3 services (Dry Clean, Wash Only, Iron)`);
-    console.log(`   - Created 12 categories`);
-    console.log(`   - Created 90+ items across all categories`);
+    console.log('✅ Catalog Items upserted with Margin test cases!');
 }
-
-main()
-    .catch((e) => {
-        console.error(e);
-        process.exit(1);
-    })
-    .finally(async () => {
-        await prisma.$disconnect();
-    });
+main().catch(console.error).finally(() => prisma.$disconnect());

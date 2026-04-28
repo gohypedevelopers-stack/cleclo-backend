@@ -13,7 +13,18 @@ const {
   getVendorWeeklyActivityHandler
 } = adminInsightsController;
 
+const {
+  loginAdmin,
+  verifyAdminOtp,
+  changeAdminPassword,
+  updateAdminProfile
+} = require('../controllers/adminAuthController');
+
 const router = express.Router();
+
+// Public/Internal routes (accessible without admin token)
+router.post('/users/by-ids', adminController.getUsersByIds);
+router.get('/users/search', adminController.getAllUsers); // Allow internal search
 
 router.use(authenticateAdmin);
 
@@ -37,6 +48,15 @@ router.get(
     ADMIN_ROLES.FINANCE_ADMIN
   ),
   adminController.getDashboardStats
+);
+router.get(
+  '/notifications',
+  authorizeAdminRoles(
+    ADMIN_ROLES.SUPER_ADMIN,
+    ADMIN_ROLES.OPERATIONS_ADMIN,
+    ADMIN_ROLES.FINANCE_ADMIN
+  ),
+  adminController.getNotifications
 );
 router.get(
   '/vendors/weekly-activity',
@@ -94,6 +114,11 @@ router.get(
   '/users/:id/addresses',
   authorizeAdminRoles(ADMIN_ROLES.SUPER_ADMIN, ADMIN_ROLES.OPERATIONS_ADMIN),
   adminController.getUserAddresses
+);
+router.post(
+  '/users/:id/reset-password',
+  authorizeAdminRoles(ADMIN_ROLES.SUPER_ADMIN, ADMIN_ROLES.OPERATIONS_ADMIN),
+  adminController.resetPassword
 );
 
 // ============================================
@@ -207,6 +232,28 @@ router.patch(
   '/settlements/:id/paid',
   authorizeAdminRoles(ADMIN_ROLES.SUPER_ADMIN, ADMIN_ROLES.FINANCE_ADMIN),
   settlementController.markSettlementPaid
+);
+
+// ============================================
+// ADMIN ACCOUNT SECURITY
+// ============================================
+router.post(
+  '/auth/change-password',
+  authorizeAdminRoles(
+    ADMIN_ROLES.SUPER_ADMIN,
+    ADMIN_ROLES.OPERATIONS_ADMIN,
+    ADMIN_ROLES.FINANCE_ADMIN
+  ),
+  changeAdminPassword
+);
+router.patch(
+  '/auth/update-profile',
+  authorizeAdminRoles(
+    ADMIN_ROLES.SUPER_ADMIN,
+    ADMIN_ROLES.OPERATIONS_ADMIN,
+    ADMIN_ROLES.FINANCE_ADMIN
+  ),
+  updateAdminProfile
 );
 
 module.exports = router;

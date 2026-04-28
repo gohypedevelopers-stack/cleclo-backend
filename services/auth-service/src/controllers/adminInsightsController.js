@@ -229,7 +229,7 @@ const getVendorWeeklyActivityHandler = async (req, res) => {
         const approvedVendors = await prisma.user.findMany({
             where: {
                 role: 'vendor',
-                isBlocked: false,
+                status: 'active',
                 vendorProfile: { isApproved: true }
             },
             select: { id: true, createdAt: true }

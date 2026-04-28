@@ -15,13 +15,23 @@ model Order {
   riderId       String?     // Assigned rider for pickup/delivery
   status        String      @default("pending") // pending, pickup_assigned, picked_up, processing, out_for_delivery, delivered, cancelled
   totalAmount   Float
+  subtotalAmount Float      @default(0)
+  gstAmount     Float       @default(0)
+  vendorShareAmount Float   @default(0)
+  platformCommissionAmount Float @default(0)
+  locationSurcharge Float   @default(0)
   pickupTime    DateTime
   deliveryTime  DateTime
   pickupAddress String?     // Pickup location address
   deliveryAddress String?   // Delivery location address
+  cityCode      String?
+  areaCode      String?
+  areaName      String?
+  slotId        String?
   serviceType   String      @default("Standard") // Standard, Express 48h, Express 24h
   paymentStatus String      @default("pending")
   gstNumber     String?     // Optional GST
+  pricingSnapshot Json?
   hasIssue      Boolean     @default(false)
   issueType     String?     // damage, customer_no_show, item_missing, delayed
   issueNote     String?
@@ -35,7 +45,17 @@ model OrderItem {
   orderId       String
   order         Order     @relation(fields: [orderId], references: [id])
   itemId        String
+  itemName      String?
   quantity      Int
+  unitPrice     Float     @default(0)
+  lineSubtotal  Float     @default(0)
+  lineTotal     Float     @default(0)
+  gstPercent    Float     @default(0)
+  gstAmount     Float     @default(0)
+  vendorShare   Float     @default(0)
+  vendorShareAmount Float @default(0)
+  platformCommissionAmount Float @default(0)
+  pricingSnapshot Json?
   condition     String?   // "Damage", "Stain", "None"
   riderVerified Boolean   @default(false)
   vendorVerified Boolean  @default(false)

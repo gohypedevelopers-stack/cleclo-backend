@@ -13,25 +13,54 @@ function normalizeSettlementStatus(status) {
 // USER MANAGEMENT
 // ============================================
 
-// Get all users (can filter by role, status, type)
+// Get all users (can filter by role, status, type and paginate)
 const getAllUsers = async (req, res) => {
     try {
-        const { role, status, userType } = req.query;
+        const { role, status, userType, search, page = 1, limit = 10 } = req.query;
+        const skip = (parseInt(page) - 1) * parseInt(limit);
+        const take = parseInt(limit);
+
         const where = {};
-        if (role) where.role = role;
-        if (status) where.status = status;
+        if (role && role !== 'all') where.role = role;
+        if (status && status !== 'all') {
+            if (status === 'Active') where.status = 'active';
+            else if (status === 'Blocked') where.status = 'blocked';
+            else where.status = status;
+        }
         if (userType) where.userType = userType;
 
-        const users = await prisma.user.findMany({
-            where,
-            include: {
-                vendorProfile: true,
-                addresses: true,
-                wallet: true
-            },
-            orderBy: { createdAt: 'desc' }
+        if (search) {
+            where.OR = [
+                { name: { contains: search, mode: 'insensitive' } },
+                { email: { contains: search, mode: 'insensitive' } },
+                { phone: { contains: search, mode: 'insensitive' } }
+            ];
+        }
+
+        const [users, total] = await Promise.all([
+            prisma.user.findMany({
+                where,
+                include: {
+                    vendorProfile: true,
+                    addresses: true,
+                    wallet: true
+                },
+                orderBy: { createdAt: 'desc' },
+                skip,
+                take
+            }),
+            prisma.user.count({ where })
+        ]);
+
+        res.json({
+            users,
+            pagination: {
+                total,
+                page: parseInt(page),
+                limit: parseInt(limit),
+                totalPages: Math.ceil(total / limit)
+            }
         });
-        res.json(users);
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -63,11 +92,11 @@ const getUserById = async (req, res) => {
 const updateUser = async (req, res) => {
     try {
         const { id } = req.params;
-        const { name, email, phone, userType } = req.body;
+        const { name, email, phone, userType, image } = req.body;
 
         const user = await prisma.user.update({
             where: { id },
-            data: { name, email, phone, userType }
+            data: { name, email, phone, userType, image }
         });
         res.json({ message: 'User updated', user });
     } catch (error) {
@@ -310,12 +339,12 @@ const getAllVendors = async (req, res) => {
 const updateVendor = async (req, res) => {
     try {
         const { id } = req.params;
-        const { name, phone, businessName, location, servicesOffered, dailyCapacity } = req.body;
+        const { name, phone, businessName, location, servicesOffered, dailyCapacity, image } = req.body;
 
         // Update user
         await prisma.user.update({
             where: { id },
-            data: { name, phone }
+            data: { name, phone, image }
         });
 
         // Update vendor profile
@@ -416,12 +445,125 @@ const getDashboardStats = async (req, res) => {
     }
 };
 
+// Get multiple users by IDs
+const getUsersByIds = async (req, res) => {
+    try {
+        const { ids } = req.body;
+        if (!Array.isArray(ids)) return res.status(400).json({ error: 'ids must be an array' });
+
+        const users = await prisma.user.findMany({
+            where: { id: { in: ids } },
+            include: {
+                vendorProfile: true,
+                addresses: true
+            }
+        });
+        res.json(users);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+// Reset user password
+const resetPassword = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { newPassword } = req.body;
+        if (!newPassword) return res.status(400).json({ error: 'newPassword is required' });
+
+        // In a real app, we would hash the password here.
+        // For MVP, we'll just update it.
+        await prisma.user.update({
+            where: { id },
+            data: { password: newPassword }
+        });
+        res.json({ message: 'Password reset successfully' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+// Get aggregated notifications
+const getNotifications = async (req, res) => {
+    try {
+        const { getIssues } = require('../data/adminDashboardData');
+        
+        const [pendingVendors, issueResponse] = await Promise.all([
+            prisma.user.findMany({
+                where: { role: 'vendor', vendorProfile: { isApproved: false } },
+                include: { vendorProfile: true },
+                take: 5,
+                orderBy: { createdAt: 'desc' }
+            }),
+            getIssues({ status: 'Open' })
+        ]);
+
+        const issues = (issueResponse?.issues || []).slice(0, 5);
+        const notifications = [];
+
+        // 1. Pending Vendors
+        pendingVendors.forEach(v => {
+            notifications.push({
+                id: `vendor-${v.id}`,
+                type: 'new_vendor',
+                title: 'New vendor application',
+                description: `${v.vendorProfile?.businessName || v.name} wants to join`,
+                timestamp: v.createdAt,
+                link: `/vendors/pending`
+            });
+        });
+
+        // 2. Order Issues
+        issues.forEach(issue => {
+            notifications.push({
+                id: `issue-${issue.id}`,
+                type: 'order_issue',
+                title: 'Order issue reported',
+                description: `${issue.orderId}: ${issue.issueType}`,
+                timestamp: issue.createdAt,
+                link: `/issues`
+            });
+        });
+
+        // 3. Low Availability (Placeholder/Simulated for now based on active vendors)
+        // In a real app, this would be a calculated metric
+        const vendorsPerCity = await prisma.vendorProfile.groupBy({
+            by: ['city'],
+            _count: { userId: true },
+            where: { isApproved: true }
+        });
+
+        vendorsPerCity.forEach(city => {
+            if (city._count.userId < 3) {
+                notifications.push({
+                    id: `low-availability-${city.city}`,
+                    type: 'availability',
+                    title: 'Low vendor availability',
+                    description: `${city.city} has only ${city._count.userId} active vendors`,
+                    timestamp: new Date(),
+                    link: `/vendors`
+                });
+            }
+        });
+
+        // Sort by timestamp descending
+        notifications.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+        res.json(notifications);
+    } catch (error) {
+        console.error('Failed to fetch notifications:', error);
+        res.status(500).json({ error: error.message });
+    }
+};
+
 module.exports = {
     // User Management
     getAllUsers,
     getUserById,
+    getUsersByIds,
     updateUser,
     blockUser,
+    resetPassword,
     getUserAddresses,
     // Wallet Management
     getUserWallet,
@@ -437,5 +579,6 @@ module.exports = {
     suspendVendor,
     getVendorPayouts,
     // Dashboard
-    getDashboardStats
+    getDashboardStats,
+    getNotifications
 };

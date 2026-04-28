@@ -24,6 +24,21 @@ async function fetchItemPrices(itemIds, cityCode = null, vendorId = null) {
     }
 }
 
+async function resolveCatalogPricing({ items, cityCode = null, vendorId = null, serviceMultiplier = 1 }) {
+    try {
+        const response = await axios.post(`${CATALOG_SERVICE_URL}/catalog/pricing/resolve`, {
+            items,
+            cityCode,
+            vendorId,
+            serviceMultiplier
+        });
+        return response.data;
+    } catch (error) {
+        console.error('Failed to resolve pricing from Catalog Service:', error.response?.data || error.message);
+        throw new Error('Pricing resolution failed');
+    }
+}
+
 async function validateLocationAndSlot(params) {
     try {
         const response = await axios.post(`${CATALOG_SERVICE_URL}/catalog/locations/validate`, params);
@@ -36,5 +51,6 @@ async function validateLocationAndSlot(params) {
 
 module.exports = {
     fetchItemPrices,
+    resolveCatalogPricing,
     validateLocationAndSlot
 };

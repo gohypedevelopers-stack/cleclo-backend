@@ -1,6 +1,6 @@
 const { PrismaClient } = require('@prisma/client');
 const { calculateDeliveryDate, getPriceMultiplier } = require('../utils/pricing');
-const { fetchItemPrices } = require('../utils/catalogServiceClient');
+const { resolveCatalogPricing, validateLocationAndSlot } = require('../utils/catalogServiceClient');
 
 const prisma = new PrismaClient();
 
@@ -16,56 +16,84 @@ const createOrder = async (req, res) => {
             deliveryAddress, 
             cityCode, 
             vendorId,
+            areaCode,
             areaName,
             slotId
         } = req.body;
 
-        // 1. Validate Location and Slot
-        const { validateLocationAndSlot } = require('../utils/catalogServiceClient');
-        const validation = await validateLocationAndSlot({ cityCode, areaName, pickupTime, slotId });
+        if (!Array.isArray(items) || items.length === 0) {
+            return res.status(400).json({ message: 'At least one order item is required' });
+        }
+
+        const validation = await validateLocationAndSlot({ cityCode, areaCode, areaName, pickupTime, slotId });
         
         if (!validation.valid) {
             return res.status(400).json({ message: validation.message || 'Invalid location or time slot' });
         }
 
-        // 2. Fetch authoritative pricing from Catalog Service
-        const itemIds = items.map(i => i.itemId);
-        const pricingMap = await fetchItemPrices(itemIds, cityCode, vendorId);
-
         const serviceMultiplier = getPriceMultiplier(serviceType);
-
-        let authoritativeTotalAmount = 0;
-        const validItemsForDb = items.map(item => {
-            const basePrice = pricingMap[item.itemId] || 0;
-            const itemTotal = basePrice * item.quantity * serviceMultiplier;
-            authoritativeTotalAmount += itemTotal;
-
-            return {
+        const pricing = await resolveCatalogPricing({
+            items: items.map((item) => ({
                 itemId: item.itemId,
-                quantity: item.quantity,
-                condition: item.condition,
+                quantity: item.quantity
+            })),
+            cityCode,
+            vendorId,
+            serviceMultiplier
+        });
+
+        const locationSurcharge = pricing.subtotalAmount * ((validation.surgePercent || 0) / 100);
+        const authoritativeTotalAmount = pricing.totalAmount + locationSurcharge;
+
+        const validItemsForDb = pricing.lineItems.map((lineItem, index) => {
+            const requestItem = items[index] || {};
+            return {
+                itemId: lineItem.itemId,
+                itemName: lineItem.itemName,
+                quantity: lineItem.quantity,
+                unitPrice: lineItem.unitPrice,
+                lineSubtotal: lineItem.lineSubtotal,
+                lineTotal: lineItem.lineTotal,
+                gstPercent: lineItem.gstPercent,
+                gstAmount: lineItem.gstAmount,
+                vendorShare: lineItem.vendorShare,
+                vendorShareAmount: lineItem.vendorShareAmount,
+                platformCommissionAmount: lineItem.platformCommissionAmount,
+                pricingSnapshot: lineItem,
+                condition: requestItem.condition,
                 images: {
-                    create: item.images ? item.images.map(img => ({ imageUrl: img })) : []
+                    create: requestItem.images ? requestItem.images.map(img => ({ imageUrl: img })) : []
                 }
             };
         });
-
-        // 3. Add surcharges
-        authoritativeTotalAmount += (validation.totalLocationSurcharge || 0);
 
         const deliveryTime = calculateDeliveryDate(new Date(pickupTime), serviceType);
 
         const order = await prisma.order.create({
             data: {
                 userId,
+                vendorId,
                 pickupTime: new Date(pickupTime),
                 deliveryTime,
                 pickupAddress,
                 deliveryAddress,
                 serviceType,
                 totalAmount: authoritativeTotalAmount,
+                subtotalAmount: pricing.subtotalAmount,
+                gstAmount: pricing.gstAmount,
+                vendorShareAmount: pricing.vendorShareAmount,
+                platformCommissionAmount: pricing.platformCommissionAmount,
+                locationSurcharge,
                 gstNumber,
                 cityCode,
+                areaCode: validation.areaCode || areaCode || null,
+                areaName: validation.areaName || areaName || null,
+                slotId,
+                pricingSnapshot: {
+                    pricing,
+                    location: validation,
+                    serviceMultiplier
+                },
                 items: {
                     create: validItemsForDb
                 }

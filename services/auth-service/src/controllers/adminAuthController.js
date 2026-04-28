@@ -556,7 +556,68 @@ async function verifyAdminOtp(req, res) {
     }
 }
 
+async function changeAdminPassword(req, res) {
+    try {
+        const { currentPassword, newPassword } = req.body;
+        const userId = req.admin.userId;
+
+        if (!currentPassword || !newPassword) {
+            return res.status(400).json({ message: 'Current and new passwords are required.' });
+        }
+
+        const adminUser = await prisma.user.findUnique({ where: { id: userId } });
+        if (!adminUser) {
+            return res.status(404).json({ message: 'Admin not found.' });
+        }
+
+        const isMatch = await bcrypt.compare(currentPassword, adminUser.password);
+        if (!isMatch) {
+            return res.status(400).json({ message: 'Current password is incorrect.' });
+        }
+
+        const hashedPassword = await bcrypt.hash(newPassword, 10);
+        await prisma.user.update({
+            where: { id: userId },
+            data: { password: hashedPassword }
+        });
+
+        res.json({ message: 'Password updated successfully.' });
+    } catch (error) {
+        console.error('Change password error:', error);
+        res.status(500).json({ message: 'Internal Server Error' });
+    }
+}
+
+async function updateAdminProfile(req, res) {
+    try {
+        const { name, email, phone, image } = req.body;
+        const userId = req.admin.userId;
+
+        const updatedUser = await prisma.user.update({
+            where: { id: userId },
+            data: { name, email, phone, image }
+        });
+
+        res.json({
+            message: 'Profile updated successfully',
+            user: {
+                id: updatedUser.id,
+                name: updatedUser.name,
+                email: updatedUser.email,
+                phone: updatedUser.phone,
+                image: updatedUser.image,
+                adminRole: updatedUser.adminRole
+            }
+        });
+    } catch (error) {
+        console.error('Update profile error:', error);
+        res.status(500).json({ message: 'Internal Server Error' });
+    }
+}
+
 module.exports = {
     loginAdmin,
-    verifyAdminOtp
+    verifyAdminOtp,
+    changeAdminPassword,
+    updateAdminProfile
 };

@@ -1,18 +1,55 @@
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
+function toPublicCity(city) {
+    return {
+        id: city.id,
+        cityName: city.cityName,
+        cityCode: city.cityCode,
+        name: city.cityName,
+        code: city.cityCode,
+        timezone: city.timezone,
+        displayOrder: city.displayOrder,
+        isEnabled: city.isEnabled,
+        status: city.isEnabled ? 'active' : 'inactive',
+        surcharge: 0
+    };
+}
+
+function toPublicSlot(slot) {
+    return {
+        ...slot,
+        surcharge: 0
+    };
+}
+
+function getTimeValue(date) {
+    return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+}
+
+function isPickupInsideSlot(pickupDate, slot) {
+    if (Number.isNaN(pickupDate.getTime())) {
+        return false;
+    }
+
+    const pickupDay = pickupDate.getDay();
+    const pickupTime = getTimeValue(pickupDate);
+
+    return slot.dayOfWeek === pickupDay && pickupTime >= slot.startTime && pickupTime <= slot.endTime;
+}
+
+function getResolvedSlaHours(slotType) {
+    if (slotType === 'express') return 24;
+    return 72;
+}
+
 const getCities = async (req, res) => {
     try {
-        const cities = await prisma.city.findMany({
-            where: { status: 'active' },
-            select: {
-                id: true,
-                name: true,
-                code: true,
-                surcharge: true
-            }
+        const cities = await prisma.cityConfig.findMany({
+            where: { isEnabled: true },
+            orderBy: { displayOrder: 'asc' }
         });
-        res.json(cities);
+        res.json(cities.map(toPublicCity));
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -20,18 +57,29 @@ const getCities = async (req, res) => {
 
 const getTimeSlots = async (req, res) => {
     try {
-        const { cityCode } = req.query;
-        const slots = await prisma.timeSlot.findMany({
+        const { cityCode, slotType } = req.query;
+        const where = {
+            isActive: true
+        };
+
+        if (cityCode) {
+            where.OR = [
+                { cityCode },
+                { cityCode: 'all' }
+            ];
+        }
+
+        if (slotType) {
+            where.slotType = slotType;
+        }
+
+        const slots = await prisma.timeSlotConfig.findMany({
             where: {
-                isActive: true,
-                OR: [
-                    { cityCode: cityCode || 'all' },
-                    { cityCode: 'all' }
-                ]
+                ...where
             },
-            orderBy: { startTime: 'asc' }
+            orderBy: [{ dayOfWeek: 'asc' }, { startTime: 'asc' }]
         });
-        res.json(slots);
+        res.json(slots.map(toPublicSlot));
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -39,32 +87,55 @@ const getTimeSlots = async (req, res) => {
 
 const validateLocationAndSlot = async (req, res) => {
     try {
-        const { cityCode, areaName, pickupTime, slotId } = req.body;
-        const now = new Date();
+        const { cityCode, areaCode, areaName, pickupTime, slotId } = req.body;
         const pickupDate = new Date(pickupTime);
 
-        // 1. Validate City
-        const city = await prisma.city.findFirst({
-            where: { code: cityCode, status: 'active' }
+        if (!cityCode || !slotId || Number.isNaN(pickupDate.getTime())) {
+            return res.status(400).json({
+                valid: false,
+                slotValid: false,
+                serviceAvailable: false,
+                message: 'cityCode, slotId, and a valid pickupTime are required'
+            });
+        }
+
+        const city = await prisma.cityConfig.findFirst({
+            where: { cityCode, isEnabled: true }
         });
         if (!city) {
-            return res.status(400).json({ valid: false, message: 'Invalid or inactive city' });
+            return res.status(400).json({
+                valid: false,
+                slotValid: false,
+                serviceAvailable: false,
+                message: 'Invalid or inactive city'
+            });
         }
 
-        // 2. Validate Area (optional if provided)
-        let areaSurcharge = 0;
-        if (areaName) {
-            const area = await prisma.area.findFirst({
-                where: { cityCode, name: areaName, status: 'active' }
+        let area = null;
+        let surgePercent = 0;
+        if (areaCode || areaName) {
+            area = await prisma.areaConfig.findFirst({
+                where: {
+                    cityCode,
+                    isEnabled: true,
+                    OR: [
+                        areaCode ? { areaCode } : undefined,
+                        areaName ? { areaName } : undefined
+                    ].filter(Boolean)
+                }
             });
             if (!area) {
-                return res.status(400).json({ valid: false, message: 'Invalid or inactive area' });
+                return res.status(400).json({
+                    valid: false,
+                    slotValid: false,
+                    serviceAvailable: false,
+                    message: 'Invalid or inactive area'
+                });
             }
-            areaSurcharge = area.surcharge;
+            surgePercent = area.surgePercent || 0;
         }
 
-        // 3. Validate Slot
-        const slot = await prisma.timeSlot.findFirst({
+        const slot = await prisma.timeSlotConfig.findFirst({
             where: {
                 id: slotId,
                 isActive: true,
@@ -73,20 +144,41 @@ const validateLocationAndSlot = async (req, res) => {
         });
 
         if (!slot) {
-            return res.status(400).json({ valid: false, message: 'Invalid or inactive time slot' });
+            return res.status(400).json({
+                valid: false,
+                slotValid: false,
+                serviceAvailable: true,
+                message: 'Invalid or inactive time slot'
+            });
         }
 
-        // Check if pickupTime matches slot (approximate check: hours/minutes)
-        // In a real app, you'd check if pickupDate falls within the slot's range on that day.
-        // For now, we assume the slotId is enough if the user selected it from the valid list.
+        const slotValid = isPickupInsideSlot(pickupDate, slot);
+        if (!slotValid) {
+            return res.status(400).json({
+                valid: false,
+                slotValid,
+                serviceAvailable: true,
+                surgePercent,
+                resolvedSlaHours: getResolvedSlaHours(slot.slotType),
+                message: 'Pickup time does not fall within the selected time slot'
+            });
+        }
 
         res.json({
             valid: true,
-            citySurcharge: city.surcharge,
-            areaSurcharge,
-            slotSurcharge: slot.surcharge,
+            slotValid,
+            serviceAvailable: true,
+            cityCode: city.cityCode,
+            cityName: city.cityName,
+            areaCode: area?.areaCode || null,
+            areaName: area?.areaName || null,
+            surgePercent,
+            resolvedSlaHours: getResolvedSlaHours(slot.slotType),
+            citySurcharge: 0,
+            areaSurcharge: 0,
+            slotSurcharge: 0,
             slotType: slot.slotType,
-            totalLocationSurcharge: city.surcharge + areaSurcharge + slot.surcharge
+            totalLocationSurcharge: 0
         });
     } catch (error) {
         res.status(500).json({ error: error.message });

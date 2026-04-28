@@ -64,6 +64,16 @@ const deleteBanner = async (req, res) => {
 const getAllVideos = async (req, res) => {
     try {
         const videos = await prisma.homeVideo.findMany({
+            select: {
+                id: true,
+                title: true,
+                description: true,
+                durationSeconds: true,
+                isActive: true,
+                thumbnailUrl: true,
+                sortOrder: true,
+                createdAt: true,
+            },
             orderBy: { sortOrder: 'asc' }
         });
         res.json(videos);
@@ -93,9 +103,13 @@ const createVideo = async (req, res) => {
 const updateVideo = async (req, res) => {
     try {
         const { id } = req.params;
+        const data = { ...req.body, updatedByAdminId: req.admin?.userId };
+        if (!data.videoUrl) {
+            delete data.videoUrl;
+        }
         const video = await prisma.homeVideo.update({
             where: { id },
-            data: { ...req.body, updatedByAdminId: req.admin?.userId }
+            data
         });
         res.json(video);
     } catch (error) {

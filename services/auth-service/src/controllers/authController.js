@@ -7,7 +7,7 @@ const JWT_SECRET = process.env.JWT_SECRET || 'secret';
 
 const signup = async (req, res) => {
     try {
-        const { name, email, phone, password, address, lat, lng } = req.body;
+        const { name, email, phone, password, address, lat, lng, image } = req.body;
 
         // Check if user exists
         const existingUser = await prisma.user.findFirst({
@@ -28,6 +28,7 @@ const signup = async (req, res) => {
                 email,
                 phone,
                 password: hashedPassword,
+                image,
                 addresses: {
                     create: {
                         addressLine: address || 'Default Address',

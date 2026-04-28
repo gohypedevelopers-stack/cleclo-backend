@@ -13,6 +13,28 @@ app.use(express.json());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 app.use('/orders', orderRoutes);
+
+// Internal service-to-service route (no JWT required)
+// Used by auth-service dashboard aggregation
+app.get('/internal/orders', async (req, res) => {
+    try {
+        const { PrismaClient } = require('@prisma/client');
+        const prisma = new PrismaClient();
+        const orders = await prisma.order.findMany({
+            include: {
+                items: {
+                    include: { images: true }
+                }
+            },
+            orderBy: { createdAt: 'desc' }
+        });
+        res.json(orders);
+    } catch (error) {
+        console.error('Internal orders fetch error:', error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 app.use('/admin/orders', require('./src/routes/adminOrderRoutes'));
 app.use('/vendor/orders', require('./src/routes/vendorOrderRoutes'));
 

@@ -1,5 +1,66 @@
 const { PrismaClient } = require('@prisma/client');
+const { Pool } = require('pg');
 const prisma = new PrismaClient();
+
+const pgPool = new Pool({
+    connectionString: (process.env.DATABASE_URL || '').replace('postgres:admin@123@', 'postgres:admin%40123@')
+});
+
+async function pgQuery(sql, params = []) {
+    const result = await pgPool.query(sql, params);
+    return result.rows;
+}
+
+function toNumber(value, fallback = 0) {
+    if (value === undefined || value === null || value === '') return fallback;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function toOptionalDate(value) {
+    if (value === undefined || value === null || value === '') return null;
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function adminMetadata(req, mode = 'update') {
+    const name = req.admin?.name || req.admin?.adminRole || 'Admin';
+    if (mode === 'create') {
+        return {
+            createdByAdminId: req.admin?.userId,
+            createdByAdminName: name,
+            updatedByAdminId: req.admin?.userId,
+            updatedByAdminName: name
+        };
+    }
+
+    return {
+        updatedByAdminId: req.admin?.userId,
+        updatedByAdminName: name
+    };
+}
+
+function mapItem(row) {
+    return {
+        id: row.id,
+        subCategoryId: row.subCategoryId,
+        skuCode: row.skuCode,
+        name: row.name,
+        imageUrl: row.imageUrl,
+        customerPrice: Number(row.customerPrice || 0),
+        vendorShare: Number(row.vendorShare || 0),
+        gstPercent: Number(row.gstPercent || 0),
+        isActive: row.isActive,
+        availableFrom: row.availableFrom,
+        availableUntil: row.availableUntil,
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
+        createdByAdminId: row.createdByAdminId,
+        createdByAdminName: row.createdByAdminName,
+        updatedByAdminId: row.updatedByAdminId,
+        updatedByAdminName: row.updatedByAdminName
+    };
+}
 
 // ============================================
 // SERVICES CRUD
@@ -7,22 +68,12 @@ const prisma = new PrismaClient();
 
 const getAllServices = async (req, res) => {
     try {
-        const services = await prisma.service.findMany({
-            include: {
-                categories: {
-                    orderBy: { displayOrder: 'asc' },
-                    include: {
-                        subCategories: {
-                            orderBy: { displayOrder: 'asc' },
-                            include: {
-                                items: true
-                            }
-                        }
-                    }
-                }
-            },
-            orderBy: { displayOrder: 'asc' }
-        });
+        const rows = await pgQuery('SELECT * FROM "Service" ORDER BY "displayOrder" ASC');
+        const services = rows.map((row) => ({
+            ...row,
+            defaultCommissionPercent: Number(row.defaultCommissionPercent || 0),
+            categories: []
+        }));
         res.json(services);
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -31,16 +82,38 @@ const getAllServices = async (req, res) => {
 
 const createService = async (req, res) => {
     try {
-        const { name, slug, description, icon, displayOrder, isActive } = req.body;
+        const {
+            name,
+            slug,
+            description,
+            icon,
+            color,
+            displayOrder,
+            isActive,
+            defaultProcessingHours,
+            expressOptionAllowed,
+            surgePricingAllowed,
+            defaultCommissionPercent
+        } = req.body;
+
+        if (!name || !String(name).trim()) {
+            return res.status(400).json({ error: 'Service name is required' });
+        }
+
         const service = await prisma.service.create({
             data: { 
-                name, 
-                slug: slug || name.toLowerCase().replace(/\s+/g, '-'),
+                name: String(name).trim(),
+                slug: slug || String(name).trim().toLowerCase().replace(/\s+/g, '-'),
                 description,
                 icon,
-                displayOrder: displayOrder || 0,
+                color,
+                displayOrder: toNumber(displayOrder, 0),
                 isActive: isActive !== undefined ? isActive : true,
-                createdByAdminId: req.admin?.userId
+                defaultProcessingHours: toNumber(defaultProcessingHours, 72),
+                expressOptionAllowed: expressOptionAllowed !== undefined ? expressOptionAllowed : true,
+                surgePricingAllowed: surgePricingAllowed !== undefined ? surgePricingAllowed : true,
+                defaultCommissionPercent: toNumber(defaultCommissionPercent, 18),
+                ...adminMetadata(req, 'create')
             }
         });
         res.status(201).json(service);
@@ -52,13 +125,36 @@ const createService = async (req, res) => {
 const updateService = async (req, res) => {
     try {
         const { id } = req.params;
-        const { name, slug, description, icon, displayOrder, isActive } = req.body;
+        const {
+            name,
+            slug,
+            description,
+            icon,
+            color,
+            displayOrder,
+            isActive,
+            defaultProcessingHours,
+            expressOptionAllowed,
+            surgePricingAllowed,
+            defaultCommissionPercent
+        } = req.body;
+        const data = adminMetadata(req);
+
+        if (name !== undefined) data.name = String(name).trim();
+        if (slug !== undefined) data.slug = slug;
+        if (description !== undefined) data.description = description;
+        if (icon !== undefined) data.icon = icon;
+        if (color !== undefined) data.color = color;
+        if (displayOrder !== undefined) data.displayOrder = toNumber(displayOrder, 0);
+        if (isActive !== undefined) data.isActive = isActive;
+        if (defaultProcessingHours !== undefined) data.defaultProcessingHours = toNumber(defaultProcessingHours, 72);
+        if (expressOptionAllowed !== undefined) data.expressOptionAllowed = expressOptionAllowed;
+        if (surgePricingAllowed !== undefined) data.surgePricingAllowed = surgePricingAllowed;
+        if (defaultCommissionPercent !== undefined) data.defaultCommissionPercent = toNumber(defaultCommissionPercent, 18);
+
         const service = await prisma.service.update({
             where: { id },
-            data: { 
-                name, slug, description, icon, displayOrder, isActive,
-                updatedByAdminId: req.admin?.userId
-            }
+            data
         });
         res.json(service);
     } catch (error) {
@@ -69,25 +165,15 @@ const updateService = async (req, res) => {
 const deleteService = async (req, res) => {
     try {
         const { id } = req.params;
-        // Due to cascading relations handled manually:
-        // Find categories
-        const categories = await prisma.category.findMany({ where: { serviceId: id } });
-        const catIds = categories.map(c => c.id);
-        
-        // Find subcategories
-        const subCategories = await prisma.subCategory.findMany({ where: { categoryId: { in: catIds } } });
-        const subCatIds = subCategories.map(sc => sc.id);
+        await prisma.service.update({
+            where: { id },
+            data: {
+                isActive: false,
+                ...adminMetadata(req)
+            }
+        });
 
-        // Delete items
-        await prisma.item.deleteMany({ where: { subCategoryId: { in: subCatIds } } });
-        // Delete subcategories
-        await prisma.subCategory.deleteMany({ where: { categoryId: { in: catIds } } });
-        // Delete categories
-        await prisma.category.deleteMany({ where: { serviceId: id } });
-        // Finally delete service
-        await prisma.service.delete({ where: { id } });
-        
-        res.json({ message: 'Service deleted' });
+        res.json({ message: 'Service archived' });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -100,12 +186,24 @@ const deleteService = async (req, res) => {
 const getAllCategories = async (req, res) => {
     try {
         const { serviceId } = req.query;
-        const where = serviceId ? { serviceId } : {};
-        const categories = await prisma.category.findMany({
-            where,
-            include: { subCategories: true, service: true },
-            orderBy: { displayOrder: 'asc' }
-        });
+        const params = [];
+        const where = serviceId ? 'WHERE c."serviceId" = $1' : '';
+        if (serviceId) params.push(serviceId);
+        const rows = await pgQuery(`
+            SELECT c.*, row_to_json(s.*) AS service,
+                COALESCE(json_agg(sc.* ORDER BY sc."displayOrder") FILTER (WHERE sc.id IS NOT NULL), '[]') AS "subCategories"
+            FROM "Category" c
+            LEFT JOIN "Service" s ON s.id = c."serviceId"
+            LEFT JOIN "SubCategory" sc ON sc."categoryId" = c.id
+            ${where}
+            GROUP BY c.id, s.id
+            ORDER BY c."displayOrder" ASC
+        `, params);
+        const categories = rows.map((row) => ({
+            ...row,
+            service: row.service,
+            subCategories: row.subCategories || []
+        }));
         res.json(categories);
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -115,13 +213,21 @@ const getAllCategories = async (req, res) => {
 const createCategory = async (req, res) => {
     try {
         const { serviceId, name, icon, displayOrder, isActive } = req.body;
+
+        if (!serviceId || !name || !String(name).trim()) {
+            return res.status(400).json({ error: 'serviceId and category name are required' });
+        }
+
         const category = await prisma.category.create({
             data: { 
-                serviceId, name, icon, 
-                displayOrder: displayOrder || 0,
+                serviceId,
+                name: String(name).trim(),
+                icon, 
+                displayOrder: toNumber(displayOrder, 0),
                 isActive: isActive !== undefined ? isActive : true,
-                createdByAdminId: req.admin?.userId
-            }
+                ...adminMetadata(req, 'create')
+            },
+            include: { service: true, subCategories: true }
         });
         res.status(201).json(category);
     } catch (error) {
@@ -133,12 +239,17 @@ const updateCategory = async (req, res) => {
     try {
         const { id } = req.params;
         const { name, icon, displayOrder, isActive } = req.body;
+        const data = adminMetadata(req);
+
+        if (name !== undefined) data.name = String(name).trim();
+        if (icon !== undefined) data.icon = icon;
+        if (displayOrder !== undefined) data.displayOrder = toNumber(displayOrder, 0);
+        if (isActive !== undefined) data.isActive = isActive;
+
         const category = await prisma.category.update({
             where: { id },
-            data: { 
-                name, icon, displayOrder, isActive,
-                updatedByAdminId: req.admin?.userId
-            }
+            data,
+            include: { service: true, subCategories: true }
         });
         res.json(category);
     } catch (error) {
@@ -149,14 +260,15 @@ const updateCategory = async (req, res) => {
 const deleteCategory = async (req, res) => {
     try {
         const { id } = req.params;
-        const subCategories = await prisma.subCategory.findMany({ where: { categoryId: id } });
-        const subCatIds = subCategories.map(sc => sc.id);
-
-        await prisma.item.deleteMany({ where: { subCategoryId: { in: subCatIds } } });
-        await prisma.subCategory.deleteMany({ where: { categoryId: id } });
-        await prisma.category.delete({ where: { id } });
+        await prisma.category.update({
+            where: { id },
+            data: {
+                isActive: false,
+                ...adminMetadata(req)
+            }
+        });
         
-        res.json({ message: 'Category deleted' });
+        res.json({ message: 'Category archived' });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -186,12 +298,36 @@ const reorderCategories = async (req, res) => {
 const getAllSubCategories = async (req, res) => {
     try {
         const { categoryId } = req.query;
-        const where = categoryId ? { categoryId } : {};
-        const subCategories = await prisma.subCategory.findMany({
-            where,
-            include: { items: true, category: true },
-            orderBy: { displayOrder: 'asc' }
-        });
+        const params = [];
+        const where = categoryId ? 'WHERE sc."categoryId" = $1' : '';
+        if (categoryId) params.push(categoryId);
+        const rows = await pgQuery(`
+            SELECT sc.*,
+                json_build_object(
+                    'id', c.id,
+                    'serviceId', c."serviceId",
+                    'name', c.name,
+                    'icon', c.icon,
+                    'displayOrder', c."displayOrder",
+                    'isActive', c."isActive",
+                    'createdAt', c."createdAt",
+                    'updatedAt', c."updatedAt",
+                    'service', row_to_json(s.*)
+                ) AS category,
+                COALESCE(json_agg(i.* ORDER BY i."updatedAt" DESC) FILTER (WHERE i.id IS NOT NULL), '[]') AS items
+            FROM "SubCategory" sc
+            LEFT JOIN "Category" c ON c.id = sc."categoryId"
+            LEFT JOIN "Service" s ON s.id = c."serviceId"
+            LEFT JOIN "Item" i ON i."subCategoryId" = sc.id
+            ${where}
+            GROUP BY sc.id, c.id, s.id
+            ORDER BY sc."displayOrder" ASC
+        `, params);
+        const subCategories = rows.map((row) => ({
+            ...row,
+            category: row.category,
+            items: row.items || []
+        }));
         res.json(subCategories);
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -201,12 +337,26 @@ const getAllSubCategories = async (req, res) => {
 const createSubCategory = async (req, res) => {
     try {
         const { categoryId, name, displayOrder, isActive } = req.body;
+
+        if (!categoryId || !name || !String(name).trim()) {
+            return res.status(400).json({ error: 'categoryId and subcategory name are required' });
+        }
+
         const subCategory = await prisma.subCategory.create({
             data: { 
-                categoryId, name, 
-                displayOrder: displayOrder || 0,
+                categoryId,
+                name: String(name).trim(), 
+                displayOrder: toNumber(displayOrder, 0),
                 isActive: isActive !== undefined ? isActive : true,
-                createdByAdminId: req.admin?.userId
+                ...adminMetadata(req, 'create')
+            },
+            include: {
+                items: true,
+                category: {
+                    include: {
+                        service: true
+                    }
+                }
             }
         });
         res.status(201).json(subCategory);
@@ -219,11 +369,22 @@ const updateSubCategory = async (req, res) => {
     try {
         const { id } = req.params;
         const { name, displayOrder, isActive } = req.body;
+        const data = adminMetadata(req);
+
+        if (name !== undefined) data.name = String(name).trim();
+        if (displayOrder !== undefined) data.displayOrder = toNumber(displayOrder, 0);
+        if (isActive !== undefined) data.isActive = isActive;
+
         const subCategory = await prisma.subCategory.update({
             where: { id },
-            data: { 
-                name, displayOrder, isActive,
-                updatedByAdminId: req.admin?.userId
+            data,
+            include: {
+                items: true,
+                category: {
+                    include: {
+                        service: true
+                    }
+                }
             }
         });
         res.json(subCategory);
@@ -235,9 +396,14 @@ const updateSubCategory = async (req, res) => {
 const deleteSubCategory = async (req, res) => {
     try {
         const { id } = req.params;
-        await prisma.item.deleteMany({ where: { subCategoryId: id } });
-        await prisma.subCategory.delete({ where: { id } });
-        res.json({ message: 'Subcategory deleted' });
+        await prisma.subCategory.update({
+            where: { id },
+            data: {
+                isActive: false,
+                ...adminMetadata(req)
+            }
+        });
+        res.json({ message: 'Subcategory archived' });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -250,11 +416,46 @@ const deleteSubCategory = async (req, res) => {
 const getAllItems = async (req, res) => {
     try {
         const { subCategoryId } = req.query;
-        const where = subCategoryId ? { subCategoryId } : {};
-        const items = await prisma.item.findMany({
-            where,
-            include: { subCategory: { include: { category: true } } }
-        });
+        const params = [];
+        const where = subCategoryId ? 'WHERE i."subCategoryId" = $1' : '';
+        if (subCategoryId) params.push(subCategoryId);
+        const rows = await pgQuery(`
+            SELECT i.*,
+                json_build_object(
+                    'id', sc.id,
+                    'categoryId', sc."categoryId",
+                    'name', sc.name,
+                    'displayOrder', sc."displayOrder",
+                    'isActive', sc."isActive",
+                    'createdAt', sc."createdAt",
+                    'updatedAt', sc."updatedAt",
+                    'category', json_build_object(
+                        'id', c.id,
+                        'serviceId', c."serviceId",
+                        'name', c.name,
+                        'icon', c.icon,
+                        'displayOrder', c."displayOrder",
+                        'isActive', c."isActive",
+                        'createdAt', c."createdAt",
+                        'updatedAt', c."updatedAt",
+                        'service', row_to_json(s.*)
+                    )
+                ) AS "subCategory",
+                COALESCE(json_agg(po.* ORDER BY po.priority DESC, po."updatedAt" DESC) FILTER (WHERE po.id IS NOT NULL), '[]') AS "priceOverrides"
+            FROM "Item" i
+            LEFT JOIN "SubCategory" sc ON sc.id = i."subCategoryId"
+            LEFT JOIN "Category" c ON c.id = sc."categoryId"
+            LEFT JOIN "Service" s ON s.id = c."serviceId"
+            LEFT JOIN "ItemPriceOverride" po ON po."itemId" = i.id
+            ${where}
+            GROUP BY i.id, sc.id, c.id, s.id
+            ORDER BY i."updatedAt" DESC
+        `, params);
+        const items = rows.map((row) => ({
+            ...mapItem(row),
+            subCategory: row.subCategory,
+            priceOverrides: row.priceOverrides || []
+        }));
         res.json(items);
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -263,17 +464,36 @@ const getAllItems = async (req, res) => {
 
 const createItem = async (req, res) => {
     try {
-        const { subCategoryId, name, skuCode, customerPrice, vendorShare, imageUrl, isActive } = req.body;
+        const {
+            subCategoryId,
+            name,
+            skuCode,
+            customerPrice,
+            vendorShare,
+            gstPercent,
+            imageUrl,
+            isActive,
+            availableFrom,
+            availableUntil
+        } = req.body;
+
+        if (!subCategoryId || !name || !String(name).trim()) {
+            return res.status(400).json({ error: 'subCategoryId and item name are required' });
+        }
+
         const item = await prisma.item.create({
             data: { 
                 subCategoryId, 
-                name, 
+                name: String(name).trim(),
                 skuCode,
-                customerPrice: parseFloat(customerPrice || 0), 
-                vendorShare: parseFloat(vendorShare || 0),
+                customerPrice: toNumber(customerPrice, 0),
+                vendorShare: toNumber(vendorShare, 0),
+                gstPercent: toNumber(gstPercent, 0),
                 imageUrl,
                 isActive: isActive !== undefined ? isActive : true,
-                createdByAdminId: req.admin?.userId
+                availableFrom: toOptionalDate(availableFrom),
+                availableUntil: toOptionalDate(availableUntil),
+                ...adminMetadata(req, 'create')
             }
         });
         res.status(201).json(item);
@@ -285,16 +505,30 @@ const createItem = async (req, res) => {
 const updateItem = async (req, res) => {
     try {
         const { id } = req.params;
-        const { name, skuCode, customerPrice, vendorShare, imageUrl, subCategoryId, isActive } = req.body;
-        const data = { updatedByAdminId: req.admin?.userId };
+        const {
+            name,
+            skuCode,
+            customerPrice,
+            vendorShare,
+            gstPercent,
+            imageUrl,
+            subCategoryId,
+            isActive,
+            availableFrom,
+            availableUntil
+        } = req.body;
+        const data = adminMetadata(req);
         
-        if (name !== undefined) data.name = name;
+        if (name !== undefined) data.name = String(name).trim();
         if (skuCode !== undefined) data.skuCode = skuCode;
-        if (customerPrice !== undefined) data.customerPrice = parseFloat(customerPrice);
-        if (vendorShare !== undefined) data.vendorShare = parseFloat(vendorShare);
+        if (customerPrice !== undefined) data.customerPrice = toNumber(customerPrice, 0);
+        if (vendorShare !== undefined) data.vendorShare = toNumber(vendorShare, 0);
+        if (gstPercent !== undefined) data.gstPercent = toNumber(gstPercent, 0);
         if (imageUrl !== undefined) data.imageUrl = imageUrl;
         if (subCategoryId !== undefined) data.subCategoryId = subCategoryId;
         if (isActive !== undefined) data.isActive = isActive;
+        if (availableFrom !== undefined) data.availableFrom = toOptionalDate(availableFrom);
+        if (availableUntil !== undefined) data.availableUntil = toOptionalDate(availableUntil);
 
         const item = await prisma.item.update({ where: { id }, data });
         res.json(item);
@@ -306,8 +540,14 @@ const updateItem = async (req, res) => {
 const deleteItem = async (req, res) => {
     try {
         const { id } = req.params;
-        await prisma.item.delete({ where: { id } });
-        res.json({ message: 'Item deleted' });
+        await prisma.item.update({
+            where: { id },
+            data: {
+                isActive: false,
+                ...adminMetadata(req)
+            }
+        });
+        res.json({ message: 'Item archived' });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -327,9 +567,12 @@ const bulkUploadItems = async (req, res) => {
             const item = await prisma.item.create({
                 data: {
                     ...itemData,
-                    customerPrice: parseFloat(itemData.customerPrice || 0),
-                    vendorShare: parseFloat(itemData.vendorShare || 0),
-                    createdByAdminId: req.admin?.userId
+                    customerPrice: toNumber(itemData.customerPrice, 0),
+                    vendorShare: toNumber(itemData.vendorShare, 0),
+                    gstPercent: toNumber(itemData.gstPercent, 0),
+                    availableFrom: toOptionalDate(itemData.availableFrom),
+                    availableUntil: toOptionalDate(itemData.availableUntil),
+                    ...adminMetadata(req, 'create')
                 }
             });
             createdItems.push(item);
@@ -343,20 +586,23 @@ const bulkUploadItems = async (req, res) => {
 
 const bulkPriceUpdate = async (req, res) => {
     try {
-        const { updates } = req.body; // Array of { id, customerPrice, vendorShare }
+        const { updates } = req.body; // Array of { id, customerPrice?, vendorShare?, gstPercent?, isActive?, subCategoryId? }
         if (!Array.isArray(updates)) return res.status(400).json({ error: 'Updates array required' });
 
         const results = await Promise.all(
-            updates.map(u => 
-                prisma.item.update({
+            updates.map(u => {
+                const data = adminMetadata(req);
+                if (u.customerPrice !== undefined) data.customerPrice = toNumber(u.customerPrice, 0);
+                if (u.vendorShare !== undefined) data.vendorShare = toNumber(u.vendorShare, 0);
+                if (u.gstPercent !== undefined) data.gstPercent = toNumber(u.gstPercent, 0);
+                if (u.isActive !== undefined) data.isActive = u.isActive;
+                if (u.subCategoryId !== undefined) data.subCategoryId = u.subCategoryId;
+
+                return prisma.item.update({
                     where: { id: u.id },
-                    data: {
-                        customerPrice: parseFloat(u.customerPrice),
-                        vendorShare: parseFloat(u.vendorShare),
-                        updatedByAdminId: req.admin?.userId
-                    }
-                })
-            )
+                    data
+                });
+            })
         );
 
         res.json({ count: results.length });
@@ -369,13 +615,20 @@ const pricePreview = async (req, res) => {
     try {
         const { items } = req.body; // [{ customerPrice, vendorShare }]
         const preview = items.map(item => {
-            const price = parseFloat(item.customerPrice || 0);
-            const share = parseFloat(item.vendorShare || 0);
+            const price = toNumber(item.customerPrice, 0);
+            const share = toNumber(item.vendorShare, 0);
+            const gstPercent = toNumber(item.gstPercent, 0);
+            const platformCommission = price - share;
+            const gstAmount = platformCommission * (gstPercent / 100);
             return {
                 customerPrice: price,
                 vendorShare: share,
-                platformCommission: price - share,
-                marginPercent: price > 0 ? ((price - share) / price) * 100 : 0
+                gstPercent,
+                platformCommission,
+                gstAmount,
+                netPlatformMargin: platformCommission - gstAmount,
+                isLossMaking: share >= price,
+                marginPercent: price > 0 ? (platformCommission / price) * 100 : 0
             };
         });
         res.json(preview);

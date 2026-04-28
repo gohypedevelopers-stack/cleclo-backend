@@ -1,36 +1,101 @@
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
+const { fetchUsersByIds, searchUsers } = require('../utils/authServiceClient');
 
-// Get all orders (with filters including vendorId)
+// Helper to enrich orders with user and vendor data
+const enrichOrdersData = async (orders) => {
+    if (!orders.length) return [];
+
+    const userIds = [...new Set(orders.map(o => o.userId).filter(Boolean))];
+    const vendorIds = [...new Set(orders.map(o => o.vendorId).filter(Boolean))];
+    const riderIds = [...new Set(orders.map(o => o.riderId).filter(Boolean))];
+
+    const allUserIds = [...new Set([...userIds, ...vendorIds, ...riderIds])];
+    const users = await fetchUsersByIds(allUserIds);
+    const userMap = new Map(users.map(u => [u.id, u]));
+
+    return orders.map(order => ({
+        ...order,
+        deliveryType: order.serviceType,
+        user: userMap.get(order.userId),
+        vendor: userMap.get(order.vendorId),
+        rider: userMap.get(order.riderId)
+    }));
+};
+
+// Get all orders (with filters including search and pagination)
 const getAllOrders = async (req, res) => {
     try {
-        const { status, vendorId, userId, date, hasIssue } = req.query;
+        const { status, vendorId, userId, date, hasIssue, search, page = 1, limit = 10 } = req.query;
+        const skip = (parseInt(page) - 1) * parseInt(limit);
+        const take = parseInt(limit);
+
         const where = {};
-
-        if (status) where.status = status;
-        if (vendorId) where.vendorId = vendorId;
-        if (userId) where.userId = userId;
+        
+        if (status && status !== 'all') where.status = status;
+        if (vendorId && vendorId !== 'all') where.vendorId = vendorId;
+        if (userId && userId !== 'all') where.userId = userId;
         if (hasIssue === 'true') where.hasIssue = true;
-
+        
         if (date) {
-            const start = new Date(date);
-            const end = new Date(date);
-            end.setDate(end.getDate() + 1);
-            where.createdAt = { gte: start, lt: end };
+            const startDate = new Date(date);
+            if (isNaN(startDate.getTime())) {
+                return res.status(400).json({ error: 'Invalid date format' });
+            }
+            startDate.setHours(0, 0, 0, 0);
+            const endDate = new Date(date);
+            endDate.setHours(23, 59, 59, 999);
+            where.createdAt = { gte: startDate, lte: endDate };
         }
 
-        const orders = await prisma.order.findMany({
-            where,
-            include: {
-                items: {
-                    include: { images: true }
-                }
-            },
-            orderBy: { createdAt: 'desc' }
+        if (search) {
+            const searchConditions = [
+                { id: { contains: search, mode: 'insensitive' } },
+                { cityCode: { contains: search, mode: 'insensitive' } },
+                { areaName: { contains: search, mode: 'insensitive' } }
+            ];
+
+            const matchingUsers = await searchUsers(search);
+            if (matchingUsers.length > 0) {
+                const matchingUserIds = matchingUsers.map(u => u.id);
+                searchConditions.push({ userId: { in: matchingUserIds } });
+                searchConditions.push({ vendorId: { in: matchingUserIds } });
+                searchConditions.push({ riderId: { in: matchingUserIds } });
+            } else if (search.length > 5) {
+                searchConditions.push({ userId: { contains: search, mode: 'insensitive' } });
+            }
+
+            where.OR = searchConditions;
+        }
+
+        const [orders, total] = await Promise.all([
+            prisma.order.findMany({
+                where,
+                include: {
+                    items: {
+                        include: { images: true }
+                    }
+                },
+                orderBy: { createdAt: 'desc' },
+                skip,
+                take
+            }),
+            prisma.order.count({ where })
+        ]);
+
+        const enrichedOrders = await enrichOrdersData(orders);
+        res.json({
+            orders: enrichedOrders,
+            pagination: {
+                total,
+                page: parseInt(page),
+                limit: parseInt(limit),
+                totalPages: Math.ceil(total / limit)
+            }
         });
-        res.json(orders);
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        console.error('Error in getAllOrders:', error);
+        res.status(500).json({ error: 'Failed to fetch orders', details: error.message });
     }
 };
 
@@ -47,7 +112,9 @@ const getOrderById = async (req, res) => {
             }
         });
         if (!order) return res.status(404).json({ error: "Order not found" });
-        res.json(order);
+
+        const enriched = await enrichOrdersData([order]);
+        res.json(enriched[0]);
     } catch (error) {
         res.status(500).json({ error: error.message });
     }

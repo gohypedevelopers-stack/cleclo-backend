@@ -31,7 +31,7 @@ async function requestOrderService(path, { method = 'GET', params = {}, body } =
 }
 
 async function fetchAllAdminOrders(params = {}) {
-  return requestOrderService('/admin/orders', { params });
+  return requestOrderService('/internal/orders', { params });
 }
 
 async function fetchAdminIssueOrders() {

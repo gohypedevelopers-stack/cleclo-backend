@@ -11,12 +11,14 @@ router.use(authenticateAdmin);
 router.get('/services', adminCatalogController.getAllServices);
 router.post('/services', adminCatalogController.createService);
 router.put('/services/:id', adminCatalogController.updateService);
+router.patch('/services/:id/status', adminCatalogController.updateService);
 router.delete('/services/:id', adminCatalogController.deleteService);
 
 // Categories CRUD
 router.get('/categories', adminCatalogController.getAllCategories);
 router.post('/categories', adminCatalogController.createCategory);
 router.put('/categories/:id', adminCatalogController.updateCategory);
+router.patch('/categories/:id/status', adminCatalogController.updateCategory);
 router.delete('/categories/:id', adminCatalogController.deleteCategory);
 router.patch('/categories/reorder', adminCatalogController.reorderCategories);
 
@@ -24,12 +26,14 @@ router.patch('/categories/reorder', adminCatalogController.reorderCategories);
 router.get('/subcategories', adminCatalogController.getAllSubCategories);
 router.post('/subcategories', adminCatalogController.createSubCategory);
 router.put('/subcategories/:id', adminCatalogController.updateSubCategory);
+router.patch('/subcategories/:id/status', adminCatalogController.updateSubCategory);
 router.delete('/subcategories/:id', adminCatalogController.deleteSubCategory);
 
 // Items CRUD
 router.get('/items', adminCatalogController.getAllItems);
 router.post('/items', adminCatalogController.createItem);
 router.put('/items/:id', adminCatalogController.updateItem);
+router.patch('/items/:id/status', adminCatalogController.updateItem);
 router.delete('/items/:id', adminCatalogController.deleteItem);
 
 // Bulk Operations

@@ -205,11 +205,22 @@ const resolveIssue = async (req, res) => {
     }
 };
 
-// Get orders with issues
+// Get orders with issues (and recently resolved for dashboard context)
 const getOrdersWithIssues = async (req, res) => {
     try {
+        const todayStart = new Date();
+        todayStart.setHours(0, 0, 0, 0);
+
         const orders = await prisma.order.findMany({
-            where: { hasIssue: true },
+            where: {
+                OR: [
+                    { hasIssue: true },
+                    { 
+                        status: { in: ['resolved', 'delivered', 'cancelled'] },
+                        updatedAt: { gte: todayStart }
+                    }
+                ]
+            },
             include: {
                 items: true
             },

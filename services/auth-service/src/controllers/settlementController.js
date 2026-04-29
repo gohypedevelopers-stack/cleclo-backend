@@ -1,7 +1,6 @@
 const crypto = require('crypto');
-const { PrismaClient } = require('@prisma/client');
+const prisma = require('../utils/prisma');
 
-const prisma = new PrismaClient();
 
 const VALID_SETTLEMENT_STATUSES = new Set(['pending', 'processing', 'paid', 'failed']);
 

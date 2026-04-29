@@ -1,8 +1,6 @@
-const { PrismaClient } = require('@prisma/client');
+const prisma = require('../utils/prisma');
 const { calculateDeliveryDate, getPriceMultiplier } = require('../utils/pricing');
 const { resolveCatalogPricing, validateLocationAndSlot } = require('../utils/catalogServiceClient');
-
-const prisma = new PrismaClient();
 
 const createOrder = async (req, res) => {
     try {

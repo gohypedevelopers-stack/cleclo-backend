@@ -1,5 +1,4 @@
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const prisma = require('../utils/prisma');
 
 function normalizeSettlementStatus(status) {
     const normalized = String(status || '').trim().toLowerCase();
@@ -487,72 +486,79 @@ const resetPassword = async (req, res) => {
 const getNotifications = async (req, res) => {
     try {
         const { getIssues } = require('../data/adminDashboardData');
-        
-        const [pendingVendors, issueResponse] = await Promise.all([
-            prisma.user.findMany({
+        const notifications = [];
+
+        // 1. Fetch Pending Vendors (Isolated)
+        try {
+            const pendingVendors = await prisma.user.findMany({
                 where: { role: 'vendor', vendorProfile: { isApproved: false } },
                 include: { vendorProfile: true },
                 take: 5,
                 orderBy: { createdAt: 'desc' }
-            }),
-            getIssues({ status: 'Open' })
-        ]);
-
-        const issues = (issueResponse?.issues || []).slice(0, 5);
-        const notifications = [];
-
-        // 1. Pending Vendors
-        pendingVendors.forEach(v => {
-            notifications.push({
-                id: `vendor-${v.id}`,
-                type: 'new_vendor',
-                title: 'New vendor application',
-                description: `${v.vendorProfile?.businessName || v.name} wants to join`,
-                timestamp: v.createdAt,
-                link: `/vendors/pending`
             });
-        });
-
-        // 2. Order Issues
-        issues.forEach(issue => {
-            notifications.push({
-                id: `issue-${issue.id}`,
-                type: 'order_issue',
-                title: 'Order issue reported',
-                description: `${issue.orderId}: ${issue.issueType}`,
-                timestamp: issue.createdAt,
-                link: `/issues`
-            });
-        });
-
-        // 3. Low Availability (Placeholder/Simulated for now based on active vendors)
-        // In a real app, this would be a calculated metric
-        const vendorsPerCity = await prisma.vendorProfile.groupBy({
-            by: ['city'],
-            _count: { userId: true },
-            where: { isApproved: true }
-        });
-
-        vendorsPerCity.forEach(city => {
-            if (city._count.userId < 3) {
+            pendingVendors.forEach(v => {
                 notifications.push({
-                    id: `low-availability-${city.city}`,
-                    type: 'availability',
-                    title: 'Low vendor availability',
-                    description: `${city.city} has only ${city._count.userId} active vendors`,
-                    timestamp: new Date(),
-                    link: `/vendors`
+                    id: `vendor-${v.id}`,
+                    type: 'new_vendor',
+                    title: 'New vendor application',
+                    description: `${v.vendorProfile?.businessName || v.name} wants to join`,
+                    timestamp: v.createdAt,
+                    link: `/vendors/pending`
                 });
-            }
-        });
+            });
+        } catch (e) {
+            console.error('Notification Error (Vendors):', e.message);
+        }
+
+        // 2. Fetch Order Issues (Isolated)
+        try {
+            const issueResponse = await getIssues({ status: 'Open' });
+            const issues = (issueResponse?.issues || []).slice(0, 5);
+            issues.forEach(issue => {
+                notifications.push({
+                    id: `issue-${issue.id}`,
+                    type: 'order_issue',
+                    title: 'Order issue reported',
+                    description: `${issue.orderId}: ${issue.issueType}`,
+                    timestamp: issue.createdAt,
+                    link: `/issues`
+                });
+            });
+        } catch (e) {
+            console.error('Notification Error (Issues):', e.message);
+        }
+
+        // 3. Fetch City Availability (Isolated)
+        try {
+            const vendorsPerCity = await prisma.vendorProfile.groupBy({
+                by: ['city'],
+                _count: { userId: true },
+                where: { isApproved: true }
+            });
+
+            vendorsPerCity.forEach(city => {
+                if (city._count.userId < 3 && city.city) {
+                    notifications.push({
+                        id: `low-availability-${city.city}`,
+                        type: 'availability',
+                        title: 'Low vendor availability',
+                        description: `${city.city} has only ${city._count.userId} active vendors`,
+                        timestamp: new Date(),
+                        link: `/vendors`
+                    });
+                }
+            });
+        } catch (e) {
+            console.error('Notification Error (Availability):', e.message);
+        }
 
         // Sort by timestamp descending
         notifications.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
         res.json(notifications);
     } catch (error) {
-        console.error('Failed to fetch notifications:', error);
-        res.status(500).json({ error: error.message });
+        console.error('Critical Notification System Failure:', error);
+        res.status(500).json({ error: 'Notification system unavailable' });
     }
 };
 

@@ -1,8 +1,8 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const orderRoutes = require('./src/routes/orderRoutes');
 const path = require('path');
-require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 3003;
@@ -18,8 +18,7 @@ app.use('/orders', orderRoutes);
 // Used by auth-service dashboard aggregation
 app.get('/internal/orders', async (req, res) => {
     try {
-        const { PrismaClient } = require('@prisma/client');
-        const prisma = new PrismaClient();
+        const prisma = require('./src/utils/prisma');
         const orders = await prisma.order.findMany({
             include: {
                 items: {

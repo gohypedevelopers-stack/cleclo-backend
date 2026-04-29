@@ -1,4 +1,4 @@
-const { PrismaClient } = require('@prisma/client');
+
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
@@ -22,7 +22,7 @@ const {
     serializeLoginEvent
 } = require('../utils/adminAuth');
 
-const prisma = new PrismaClient();
+const prisma = require('../utils/prisma');
 const JWT_SECRET = process.env.JWT_SECRET || 'secret';
 const OTP_DEBUG_ENABLED = process.env.NODE_ENV !== 'production' || process.env.ADMIN_OTP_DEBUG === 'true';
 

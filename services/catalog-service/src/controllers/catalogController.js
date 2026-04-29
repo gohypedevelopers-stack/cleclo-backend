@@ -1,5 +1,5 @@
 const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const prisma = require('../utils/prisma');
 
 function isDateWindowActive({ effectiveFrom, effectiveTo }, now = new Date()) {
     return (!effectiveFrom || effectiveFrom <= now) && (!effectiveTo || effectiveTo >= now);

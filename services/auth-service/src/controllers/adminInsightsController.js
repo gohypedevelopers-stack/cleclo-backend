@@ -4,10 +4,8 @@ const {
     markAllIssuesReviewed,
     updateIssue
 } = require('../data/adminDashboardData');
-const { PrismaClient } = require('@prisma/client');
+const prisma = require('../utils/prisma');
 const { fetchAllAdminOrders } = require('../utils/orderServiceClient');
-
-const prisma = new PrismaClient();
 
 const ISSUE_ACTIONS = new Set(['assign', 'review', 'escalate', 'resolve']);
 const ROOT_CAUSES = new Set(['Vendor Fault', 'Rider Fault', 'Customer Fault', 'System Issue']);
@@ -117,6 +115,7 @@ const getDashboardOverviewHandler = async (req, res) => {
 
         res.json(payload);
     } catch (error) {
+        console.error('[DashboardOverview Error]:', error);
         res.status(500).json({ message: 'Failed to load dashboard overview', error: error.message });
     }
 };

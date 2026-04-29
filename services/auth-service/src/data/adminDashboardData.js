@@ -1,10 +1,8 @@
-const { PrismaClient } = require('@prisma/client');
+const prisma = require('../utils/prisma');
 
 const { ADMIN_ROLES } = require('../config/adminAccess');
 const { fetchAllAdminOrders, resolveAdminOrderIssue } = require('../utils/orderServiceClient');
 const { persistIssueClaimImage } = require('../utils/adminIssueAssetStorage');
-
-const prisma = new PrismaClient();
 
 const INR_FORMATTER = new Intl.NumberFormat('en-IN', {
   style: 'currency',
@@ -215,6 +213,13 @@ function getPeriodRange(period = 'today', startDate, endDate) {
     };
   }
 
+  if (period === 'this_year') {
+    return {
+      start: new Date(today.getFullYear(), 0, 1),
+      end: tomorrow
+    };
+  }
+
   if (period === 'custom' && startDate && endDate) {
     return {
       start: startOfDay(new Date(startDate)),
@@ -229,6 +234,7 @@ function getPeriodLabel(period, startDate, endDate) {
   if (period === 'yesterday') return 'Yesterday';
   if (period === 'this_week') return 'This Week';
   if (period === 'this_month') return 'This Month';
+  if (period === 'this_year') return 'This Year';
   if (period === 'custom' && startDate && endDate) return `${startDate} to ${endDate}`;
   return 'Today';
 }
@@ -554,24 +560,33 @@ async function getOrders() {
 }
 
 async function getBaseContext() {
+  const fetchSafe = async (promise, fallback = []) => {
+    try {
+      return await promise;
+    } catch (e) {
+      console.error('[BaseContext] Query Failed:', e.message);
+      return fallback;
+    }
+  };
+
   const [orders, users, settlements, supportTickets, existingAlerts] = await Promise.all([
     getOrders(),
-    prisma.user.findMany({
+    fetchSafe(prisma.user.findMany({
       include: {
         vendorProfile: true,
         addresses: true,
         outlets: true
       }
-    }),
-    prisma.vendorSettlement.findMany({
+    })),
+    fetchSafe(prisma.vendorSettlement.findMany({
       orderBy: { createdAt: 'desc' }
-    }),
-    prisma.supportTicket.findMany({
+    })),
+    fetchSafe(prisma.supportTicket.findMany({
       orderBy: { createdAt: 'desc' }
-    }),
-    prisma.adminIssueAlert.findMany({
+    })),
+    fetchSafe(prisma.adminIssueAlert.findMany({
       orderBy: { createdAt: 'desc' }
-    })
+    }))
   ]);
 
   const userMap = new Map(users.map((user) => [user.id, user]));
@@ -1223,20 +1238,18 @@ function filterRows(rows, { range, search, status, vendor, city, date }) {
 function buildKpiCards(adminRole, filteredOrders, filteredSettlements, filteredIssues, monthOrders, allSettlements, periodLabel) {
   const paidOrders = filteredOrders.filter((order) => order.paymentStatus === 'Paid');
   const selectedRevenue = paidOrders.reduce((sum, order) => sum + order.amount, 0);
+  const selectedCommission = paidOrders.reduce((sum, order) => sum + Number(order.commissionAmount || 0), 0);
   const avgOrderValue = paidOrders.length === 0 ? 0 : selectedRevenue / paidOrders.length;
+  
   const delayedOrders = filteredOrders.filter((order) => order.status === 'Pickup Delayed').length;
   const pendingOrders = filteredOrders.filter((order) =>
     ['Pending', 'Processing', 'Out for Delivery', 'Pickup Delayed', 'Issue Reported'].includes(order.status)
   ).length;
-  const monthRevenue = monthOrders
-    .filter((order) => order.paymentStatus === 'Paid')
-    .reduce((sum, order) => sum + order.amount, 0);
-  const monthCommission = monthOrders
-    .filter((order) => order.paymentStatus === 'Paid')
-    .reduce((sum, order) => sum + Number(order.commissionAmount || 0), 0);
+
   const payoutDueAmount = allSettlements
     .filter((settlement) => settlement.status === 'Pending' || settlement.status === 'Processing')
     .reduce((sum, settlement) => sum + settlement.amount, 0);
+    
   const settlementsCompletedAmount = filteredSettlements
     .filter((settlement) => settlement.status === 'Completed')
     .reduce((sum, settlement) => sum + settlement.amount, 0);
@@ -1286,15 +1299,15 @@ function buildKpiCards(adminRole, filteredOrders, filteredSettlements, filteredI
     },
     grossRevenue: {
       key: 'gross_platform_revenue',
-      title: 'Gross Platform Revenue (This Month)',
-      value: formatCurrency(monthRevenue),
+      title: `Gross Revenue ${periodLabel}`,
+      value: formatCurrency(selectedRevenue),
       accent: 'emerald',
       note: 'Gross billings'
     },
     netCommission: {
       key: 'net_commission_earned',
-      title: 'Net Commission Earned',
-      value: formatCurrency(monthCommission),
+      title: `Commission ${periodLabel}`,
+      value: formatCurrency(selectedCommission),
       accent: 'blue',
       note: 'Platform earnings'
     },
@@ -1314,7 +1327,7 @@ function buildKpiCards(adminRole, filteredOrders, filteredSettlements, filteredI
     },
     settlementsCompleted: {
       key: 'settlements_completed',
-      title: 'Settlements Completed',
+      title: `Settlements ${periodLabel}`,
       value: formatCurrency(settlementsCompletedAmount),
       accent: 'emerald',
       note: 'Completed in selected view'
@@ -1418,7 +1431,11 @@ async function getDashboardOverview({
   const roleConfig = getRoleConfiguration(role);
   const context = await getBaseContext();
 
-  await syncIssueAlerts(context);
+  try {
+    await syncIssueAlerts(context);
+  } catch (syncError) {
+    console.error('[DashboardOverview] Sync Issues Error (Continuing...):', syncError);
+  }
 
   const latestAlerts = await prisma.adminIssueAlert.findMany({
     orderBy: [{ unread: 'desc' }, { updatedAt: 'desc' }]
@@ -1532,7 +1549,11 @@ async function getIssues({
 }) {
   const context = await getBaseContext();
 
-  await syncIssueAlerts(context);
+  try {
+    await syncIssueAlerts(context);
+  } catch (syncError) {
+    console.error('[getIssues] Sync Issues Error (Continuing...):', syncError);
+  }
 
   const latestAlerts = await prisma.adminIssueAlert.findMany({
     orderBy: [{ unread: 'desc' }, { updatedAt: 'desc' }]

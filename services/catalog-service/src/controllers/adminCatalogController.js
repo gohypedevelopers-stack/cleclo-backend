@@ -1,6 +1,5 @@
-const { PrismaClient } = require('@prisma/client');
+const prisma = require('../utils/prisma');
 const { Pool } = require('pg');
-const prisma = new PrismaClient();
 
 const pgPool = new Pool({
     connectionString: (process.env.DATABASE_URL || '').replace('postgres:admin@123@', 'postgres:admin%40123@')

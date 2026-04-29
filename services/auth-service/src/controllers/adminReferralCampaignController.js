@@ -1,5 +1,4 @@
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const prisma = require('../utils/prisma');
 
 const toNumber = (value, fallback = 0) => {
     if (value === undefined || value === null || value === '') return fallback;

@@ -1,5 +1,4 @@
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const prisma = require('../utils/prisma');
 const { fetchUsersByIds, searchUsers } = require('../utils/authServiceClient');
 
 // Helper to enrich orders with user and vendor data

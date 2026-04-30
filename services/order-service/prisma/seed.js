@@ -9,9 +9,9 @@ const prisma = new PrismaClient();
 // 4. Run this seed again
 
 const PLACEHOLDER_CUSTOMER_IDS = [
+    'alice-freeman-uuid-12345',
     '11111111-1111-1111-1111-111111111111',
     '22222222-2222-2222-2222-222222222222',
-    '33333333-3333-3333-3333-333333333333',
 ];
 
 const PLACEHOLDER_VENDOR_IDS = [
@@ -40,59 +40,73 @@ function relativeDate(daysOffset, hour, minute = 0) {
 }
 
 async function main() {
-    console.log('🌱 Seeding Order Service database...\n');
+    console.log('🌱 Cleaning and Seeding Order Service database...\n');
+
+    // Clear existing data for a fresh demo state
+    const prisma = require('../src/utils/prisma');
+    await prisma.orderImage.deleteMany();
+    await prisma.orderItem.deleteMany();
+    await prisma.order.deleteMany();
+
     console.log('ℹ️  Using placeholder IDs. Orders will be created but may not link to real users.');
     console.log('   To use real IDs, see instructions at the top of this file.\n');
 
-    // 1. Create Delivered Order
+    // 1. Create Alice Freeman VIP Orders (Total 18,400)
     await prisma.order.create({
         data: {
-            userId: PLACEHOLDER_CUSTOMER_IDS[0],
+            userId: 'alice-freeman-uuid-12345',
             vendorId: PLACEHOLDER_VENDOR_IDS[0],
-            riderId: PLACEHOLDER_RIDER_IDS[0],
             status: 'delivered',
-            totalAmount: 450,
-            pickupTime: relativeDate(-4, 10),
-            deliveryTime: relativeDate(-2, 18),
-            pickupAddress: '12 Linking Road, Bandra West, Mumbai',
-            deliveryAddress: '42 Hill View Apartments, Powai, Mumbai',
-            serviceType: 'Standard',
+            totalAmount: 14000,
+            pickupTime: relativeDate(-10, 10),
+            deliveryTime: relativeDate(-8, 18),
+            serviceType: 'Premium Dry Clean',
             paymentStatus: 'paid',
-            hasIssue: false,
-            items: {
-                create: [
-                    {
-                        itemId: PLACEHOLDER_ITEM_IDS[0],
-                        quantity: 3,
-                        condition: 'None',
-                        riderVerified: true,
-                        vendorVerified: true,
-                        images: {
-                            create: [
-                                { imageUrl: '/uploads/order1-item1-1.jpg' },
-                                { imageUrl: '/uploads/order1-item1-2.jpg' },
-                            ],
-                        },
-                    },
-                    {
-                        itemId: PLACEHOLDER_ITEM_IDS[2],
-                        quantity: 2,
-                        condition: 'None',
-                        riderVerified: true,
-                        vendorVerified: true,
-                        images: {
-                            create: [
-                                { imageUrl: '/uploads/order1-item2-1.jpg' },
-                            ],
-                        },
-                    },
-                ],
-            },
+            createdAt: relativeDate(-10, 10),
         },
     });
-    console.log('✅ Created order 1: Delivered');
+    await prisma.order.create({
+        data: {
+            userId: 'alice-freeman-uuid-12345',
+            vendorId: PLACEHOLDER_VENDOR_IDS[1],
+            status: 'delivered',
+            totalAmount: 4400,
+            pickupTime: relativeDate(-3, 10),
+            deliveryTime: relativeDate(-2, 18),
+            serviceType: 'Silk Care',
+            paymentStatus: 'paid',
+            createdAt: relativeDate(-3, 10),
+        },
+    });
+    await prisma.order.create({
+        data: {
+            userId: 'alice-freeman-uuid-12345',
+            vendorId: PLACEHOLDER_VENDOR_IDS[0],
+            status: 'cancelled',
+            totalAmount: 1200,
+            pickupTime: relativeDate(-16, 10),
+            deliveryTime: relativeDate(-15, 18),
+            serviceType: 'Wash & Fold',
+            paymentStatus: 'refunded',
+            createdAt: relativeDate(-15, 10),
+        },
+    });
+    await prisma.order.create({
+        data: {
+            userId: 'alice-freeman-uuid-12345',
+            vendorId: PLACEHOLDER_VENDOR_IDS[0],
+            status: 'cancelled',
+            totalAmount: 800,
+            pickupTime: relativeDate(-6, 10),
+            deliveryTime: relativeDate(-5, 18),
+            serviceType: 'Iron Only',
+            paymentStatus: 'refunded',
+            createdAt: relativeDate(-5, 10),
+        },
+    });
+    console.log('✅ Created Alice Freeman VIP orders (Total ₹18,400 with 2 Refunds)');
 
-    // 2. Create Processing Order
+    // 2. Create Delivered Order (Previous Order 1)
     await prisma.order.create({
         data: {
             userId: PLACEHOLDER_CUSTOMER_IDS[1],

@@ -318,17 +318,94 @@ const getAllVendors = async (req, res) => {
             orderBy: { createdAt: 'desc' }
         });
 
-        // Bypass Prisma Client type lock for the new analytical fields by querying raw
-        const analytics = await prisma.$queryRawUnsafe('SELECT "userId", "totalRevenue", "commissionEarned", "payoutPending", "slaScore", "rating", "issueRate" FROM "VendorProfile"');
+        const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+        
+        const [analytics, monthlyStats, pendingCount, approvedThisMonth, rejectedThisMonth, allApproved] = await Promise.all([
+            prisma.vendorProfile.findMany({
+                select: {
+                    userId: true,
+                    totalRevenue: true,
+                    commissionEarned: true,
+                    payoutPending: true,
+                    slaScore: true,
+                    rating: true,
+                    issueRate: true,
+                    refundAmount: true,
+                    totalOrders: true,
+                    city: true,
+                    area: true,
+                    cluster: true,
+                    dailyCapacity: true,
+                    currentLoad: true,
+                    commissionRate: true
+                }
+            }),
+            prisma.vendorSettlement.groupBy({
+                by: ['vendorId'],
+                _sum: {
+                    grossAmount: true,
+                    orderCount: true
+                },
+                where: {
+                    createdAt: { gte: monthStart }
+                }
+            }),
+            prisma.user.count({ 
+                where: { 
+                    role: 'vendor', 
+                    vendorProfile: { isApproved: false },
+                    status: { not: 'suspended' }
+                } 
+            }),
+            prisma.vendorProfile.count({ 
+                where: { 
+                    isApproved: true, 
+                    approvedAt: { gte: monthStart } 
+                } 
+            }),
+            prisma.vendorProfile.count({ 
+                where: { 
+                    rejectedAt: { gte: monthStart } 
+                } 
+            }),
+            prisma.vendorProfile.findMany({ 
+                where: { isApproved: true, approvedAt: { not: null } },
+                select: { approvedAt: true, user: { select: { createdAt: true } } }
+            })
+        ]);
+
+        let avgApprovalTime = 0;
+        if (allApproved.length > 0) {
+            const totalTime = allApproved.reduce((acc, curr) => {
+                return acc + (new Date(curr.approvedAt) - new Date(curr.user.createdAt));
+            }, 0);
+            avgApprovalTime = totalTime / allApproved.length / (1000 * 60 * 60); // In hours
+        }
+        
         const mappedVendors = vendors.map(v => {
             const stats = analytics.find(a => a.userId === v.id);
-            if (stats && v.vendorProfile) {
-                v.vendorProfile = { ...v.vendorProfile, ...stats };
+            const mStats = monthlyStats.find(m => m.vendorId === v.id);
+            
+            if (v.vendorProfile) {
+                v.vendorProfile = { 
+                    ...v.vendorProfile, 
+                    ...(stats || {}),
+                    revenueThisMonth: mStats?._sum?.grossAmount || 0,
+                    ordersThisMonth: mStats?._sum?.orderCount || 0
+                };
             }
             return v;
         });
 
-        res.json(mappedVendors);
+        res.json({
+            vendors: mappedVendors,
+            stats: {
+                pendingCount,
+                approvedThisMonth,
+                rejectedThisMonth,
+                avgApprovalTime: parseFloat(avgApprovalTime.toFixed(1))
+            }
+        });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -338,7 +415,12 @@ const getAllVendors = async (req, res) => {
 const updateVendor = async (req, res) => {
     try {
         const { id } = req.params;
-        const { name, phone, businessName, location, servicesOffered, dailyCapacity, image } = req.body;
+        const { 
+            name, phone, businessName, location, servicesOffered, 
+            dailyCapacity, image, areaCoverage, inspectionStatus, 
+            internalNotes, onboardingStep,
+            documentsUploadedAt, documentsVerifiedAt, agreementSignedAt
+        } = req.body;
 
         // Update user
         await prisma.user.update({
@@ -349,7 +431,18 @@ const updateVendor = async (req, res) => {
         // Update vendor profile
         const profile = await prisma.vendorProfile.update({
             where: { userId: id },
-            data: { businessName, servicesOffered, dailyCapacity }
+            data: { 
+                businessName, 
+                servicesOffered, 
+                dailyCapacity,
+                areaCoverage,
+                inspectionStatus,
+                internalNotes,
+                onboardingStep: onboardingStep ? parseInt(onboardingStep) : undefined,
+                documentsUploadedAt,
+                documentsVerifiedAt,
+                agreementSignedAt
+            }
         });
 
         // Update outlet if location provided
@@ -374,8 +467,19 @@ const approveVendor = async (req, res) => {
 
         const updatedProfile = await prisma.vendorProfile.update({
             where: { userId: vendorId },
-            data: { isApproved: isApproved === true }
+            data: { 
+                isApproved: isApproved === true,
+                approvedAt: isApproved === true ? new Date() : null,
+                rejectedAt: null, // Clear rejected status if approving
+                rejectionReason: null, // Clear reason
+                onboardingStep: isApproved === true ? 5 : undefined // 5: Activated
+            }
         });
+
+        // TODO: Auto Email/WhatsApp Trigger on Approval
+        if (isApproved) {
+            console.log(`[Notification]: Sending onboarding welcome message to vendor ${vendorId}`);
+        }
 
         res.json({ message: 'Vendor status updated', profile: updatedProfile });
     } catch (error) {
@@ -383,17 +487,33 @@ const approveVendor = async (req, res) => {
     }
 };
 
-// Suspend/Reactivate vendor
+// Suspend/Reactivate vendor (Rejection)
 const suspendVendor = async (req, res) => {
     try {
         const { id } = req.params;
-        const { suspended } = req.body; // true = suspend, false = reactivate
+        const { suspended, reason } = req.body; // true = suspend/reject, false = reactivate
 
-        const user = await prisma.user.update({
-            where: { id },
-            data: { status: suspended ? 'suspended' : 'active' }
-        });
-        res.json({ message: suspended ? 'Vendor suspended' : 'Vendor reactivated', user });
+        const [user, profile] = await prisma.$transaction([
+            prisma.user.update({
+                where: { id },
+                data: { status: suspended ? 'suspended' : 'active' }
+            }),
+            prisma.vendorProfile.update({
+                where: { userId: id },
+                data: { 
+                    rejectedAt: suspended ? new Date() : null,
+                    approvedAt: suspended ? null : undefined,
+                    rejectionReason: suspended ? reason : null
+                }
+            })
+        ]);
+
+        // TODO: Auto Email/WhatsApp Trigger on Rejection
+        if (suspended && reason) {
+            console.log(`[Notification]: Sending rejection message to vendor ${id}. Reason: ${reason}`);
+        }
+
+        res.json({ message: suspended ? 'Vendor suspended' : 'Vendor reactivated', user, profile });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -419,28 +539,197 @@ const getVendorPayouts = async (req, res) => {
 };
 
 // ============================================
-// DASHBOARD STATS
-// ============================================
-
 // Get admin dashboard stats
 const getDashboardStats = async (req, res) => {
     try {
-        // Get counts
-        const [totalUsers, activeUsers, totalVendors, pendingVendors] = await Promise.all([
+        // --- 1. Basic Counts & Status Breakdown ---
+        const [
+            totalUsers, 
+            activeUsers, 
+            totalVendors, 
+            approvedVendors, 
+            blockedVendors,
+            highRiskAlerts
+        ] = await Promise.all([
             prisma.user.count({ where: { role: 'customer' } }),
             prisma.user.count({ where: { role: 'customer', status: 'active' } }),
             prisma.user.count({ where: { role: 'vendor' } }),
-            prisma.user.count({ where: { role: 'vendor', vendorProfile: { isApproved: false } } })
+            prisma.user.count({ where: { role: 'vendor', vendorProfile: { isApproved: true } } }),
+            prisma.user.count({ where: { role: 'vendor', status: 'blocked' } }),
+            prisma.adminIssueAlert.groupBy({
+                by: ['vendorId'],
+                where: {
+                    status: 'OPEN',
+                    severity: { in: ['CRITICAL', 'HIGH'] },
+                    vendorId: { not: null }
+                }
+            })
         ]);
+
+        const verificationPending = totalVendors - approvedVendors - blockedVendors;
+
+        // --- 2. Top Performing Vendors ---
+        const topVendorsProfiles = await prisma.vendorProfile.findMany({
+            take: 3,
+            orderBy: { totalRevenue: 'desc' },
+            include: { user: { select: { name: true, image: true } } }
+        });
+
+        // Get order counts for top vendors from settlements
+        const topVendors = await Promise.all(topVendorsProfiles.map(async (p) => {
+            const orders = await prisma.vendorSettlement.aggregate({
+                where: { vendorId: p.userId },
+                _sum: { orderCount: true }
+            });
+            return {
+                id: p.userId,
+                name: p.businessName || p.user.name,
+                image: p.user.image,
+                revenue: p.totalRevenue,
+                orders: orders._sum.orderCount || 0,
+                sla: p.slaScore,
+                rating: p.rating
+            };
+        }));
+
+        // --- 3. Monthly Growth Data (Last 6 Months) ---
+        const months = [];
+        const now = new Date();
+
+        // Commission Intelligence (Monthly Trend)
+        const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+        const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59);
+
+        const [commissionThisMonth, commissionLastMonth] = await Promise.all([
+            prisma.vendorSettlement.aggregate({
+                where: { createdAt: { gte: thisMonthStart } },
+                _sum: { commissionAmount: true }
+            }),
+            prisma.vendorSettlement.aggregate({
+                where: { 
+                    createdAt: { 
+                        gte: lastMonthStart,
+                        lte: lastMonthEnd
+                    } 
+                },
+                _sum: { commissionAmount: true }
+            })
+        ]);
+
+        const thisMonthVal = commissionThisMonth._sum.commissionAmount || 0;
+        const lastMonthVal = commissionLastMonth._sum.commissionAmount || 0;
+        const commissionTrend = lastMonthVal > 0 
+            ? ((thisMonthVal - lastMonthVal) / lastMonthVal) * 100 
+            : 0;
+
+        // Settlement Status Snapshot
+        const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        const [settlementsDue, settlementsPaid, settlementsOverdue] = await Promise.all([
+            prisma.vendorSettlement.aggregate({
+                where: { status: { in: ['PENDING', 'PROCESSING'] } },
+                _sum: { amount: true }
+            }),
+            prisma.vendorSettlement.aggregate({
+                where: { status: 'PAID' },
+                _sum: { amount: true }
+            }),
+            prisma.vendorSettlement.aggregate({
+                where: { 
+                    status: { in: ['PENDING', 'PROCESSING'] },
+                    createdAt: { lt: sevenDaysAgo }
+                },
+                _sum: { amount: true }
+            })
+        ]);
+
+        const dueVal = settlementsDue._sum.amount || 0;
+        const paidVal = settlementsPaid._sum.amount || 0;
+        const overdueVal = settlementsOverdue._sum.amount || 0;
+
+        // Issue Breakdown (Quality Insight)
+        const issueBreakdown = await prisma.adminIssueAlert.groupBy({
+            by: ['issueType'],
+            _count: { _all: true },
+        });
+
+        const issueData = [
+            { name: 'Delay', value: issueBreakdown.find(i => i.issueType.toLowerCase().includes('delay'))?._count._all || 0 },
+            { name: 'Damage', value: issueBreakdown.find(i => i.issueType.toLowerCase().includes('damage'))?._count._all || 0 },
+            { name: 'No Show', value: issueBreakdown.find(i => i.issueType.toLowerCase().includes('show'))?._count._all || 0 },
+            { name: 'Refund', value: issueBreakdown.find(i => i.issueType.toLowerCase().includes('refund'))?._count._all || 0 },
+        ];
+
+        for (let i = 5; i >= 0; i--) {
+            const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+            months.push({
+                name: d.toLocaleString('default', { month: 'short' }),
+                start: new Date(d.getFullYear(), d.getMonth(), 1),
+                end: new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59)
+            });
+        }
+
+        const growthData = await Promise.all(months.map(async (m) => {
+            const registered = await prisma.user.count({
+                where: { 
+                    role: 'vendor', 
+                    createdAt: { lte: m.end } 
+                }
+            });
+            const active = await prisma.user.count({
+                where: { 
+                    role: 'vendor', 
+                    vendorProfile: { isApproved: true },
+                    createdAt: { lte: m.end }
+                }
+            });
+            return {
+                month: m.name,
+                registered,
+                active
+            };
+        }));
+
+        // --- 4. Analytics Aggregates ---
+        const analytics = await prisma.vendorProfile.aggregate({
+            _sum: {
+                totalRevenue: true,
+                commissionEarned: true,
+                payoutPending: true
+            },
+            _avg: {
+                slaScore: true,
+                rating: true,
+                issueRate: true
+            }
+        });
 
         res.json({
             totalUsers,
             activeUsers,
             totalVendors,
-            pendingVendors,
+            approvedVendors,
+            verificationPending: Math.max(0, verificationPending),
+            rejectedVendors: blockedVendors,
+            highRiskVendors: highRiskAlerts.length,
+            totalRevenue: analytics._sum.totalRevenue || 0,
+            commissionEarned: analytics._sum.commissionEarned || 0,
+            commissionThisMonth: thisMonthVal,
+            commissionTrend: commissionTrend,
+            payoutPending: analytics._sum.payoutPending || 0,
+            settlementsDue: dueVal,
+            settlementsCompleted: paidVal,
+            settlementsOverdue: overdueVal,
+            issueBreakdown: issueData,
+            avgSla: analytics._avg.slaScore || 0,
+            avgRating: analytics._avg.rating || 0,
+            avgIssueRate: analytics._avg.issueRate || 0,
+            topVendors,
+            growthData
         });
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        console.error('[AdminStats Error]:', error);
+        res.status(500).json({ message: 'Failed to load dashboard stats', error: error.message });
     }
 };
 

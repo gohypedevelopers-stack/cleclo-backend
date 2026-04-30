@@ -223,35 +223,38 @@ function getWeekDateRange() {
 const getVendorWeeklyActivityHandler = async (req, res) => {
     try {
         const { monday, sunday } = getWeekDateRange();
+        const { city, vendorId, serviceType } = req.query;
 
-        // --- 1. All approved, unblocked vendors from auth DB ---
-        const approvedVendors = await prisma.user.findMany({
-            where: {
-                role: 'vendor',
-                status: 'active',
-                vendorProfile: { isApproved: true }
-            },
-            select: { id: true, createdAt: true }
-        });
-        const approvedVendorIds = new Set(approvedVendors.map(v => v.id));
+        // --- 1. Fetch available filters for the UI ---
+        const [vendors, profiles] = await Promise.all([
+            prisma.user.findMany({
+                where: { role: 'vendor', status: 'active' },
+                select: { id: true, name: true }
+            }),
+            prisma.adminLoginEvent.findMany({
+                where: { city: { not: null } },
+                distinct: ['city'],
+                select: { city: true }
+            })
+        ]);
 
-        // --- 2. Fetch orders this week from order service ---
+        // --- 2. Fetch orders from order service ---
         let orders = [];
         try {
-            const all = await fetchAllAdminOrders();
+            const all = await fetchAllAdminOrders({ city, vendorId, serviceType });
             orders = Array.isArray(all) ? all : [];
-        } catch {
+        } catch (error) {
+            console.error('[OrderService Fetch Error]:', error);
             orders = [];
         }
 
-        // Filter only orders in the current week with an assigned approved vendor
+        // --- 3. Filter by week and calculate stats ---
         const weekOrders = orders.filter(o => {
-            if (!o.vendorId || !approvedVendorIds.has(o.vendorId)) return false;
             const d = new Date(o.createdAt || o.pickupTime);
             return d >= monday && d <= sunday;
         });
 
-        // --- 3. Build Mon–Sun array ---
+        // --- 4. Build Mon–Sun array with Orders and Revenue ---
         const result = WEEK_DAYS.map((day, i) => {
             const dayStart = new Date(monday);
             dayStart.setDate(monday.getDate() + i);
@@ -259,27 +262,29 @@ const getVendorWeeklyActivityHandler = async (req, res) => {
             const dayEnd = new Date(dayStart);
             dayEnd.setHours(23, 59, 59, 999);
 
-            // Distinct vendors that had ≥1 order this day
-            const activeSet = new Set(
-                weekOrders
-                    .filter(o => {
-                        const d = new Date(o.createdAt || o.pickupTime);
-                        return d >= dayStart && d <= dayEnd;
-                    })
-                    .map(o => o.vendorId)
-            );
+            const dayOrders = weekOrders.filter(o => {
+                const d = new Date(o.createdAt || o.pickupTime);
+                return d >= dayStart && d <= dayEnd;
+            });
 
-            // Fallback: if no orders exist yet today/future, count cumulative approved vendors
-            const now = new Date();
-            const isFuture = dayStart > now;
-            const active = isFuture ? 0 : (activeSet.size > 0 ? activeSet.size : approvedVendors.filter(v => new Date(v.createdAt) <= dayEnd).length);
-
-            return { day, active };
+            return { 
+                day, 
+                orders: dayOrders.length, 
+                revenue: dayOrders.reduce((sum, o) => sum + (o.totalAmount || o.amount || 0), 0)
+            };
         });
 
-        res.json({ weeklyActivity: result, generatedAt: new Date().toISOString() });
+        res.json({ 
+            weeklyActivity: result, 
+            filters: {
+                vendors,
+                cities: profiles.map(p => p.city),
+                serviceTypes: ['Dry Clean', 'Laundry', 'Wash & Fold', 'Ironing'] // Standard types
+            },
+            generatedAt: new Date().toISOString() 
+        });
     } catch (error) {
-        res.status(500).json({ message: 'Failed to load vendor weekly activity', error: error.message });
+        res.status(500).json({ message: 'Failed to load weekly orders graph data', error: error.message });
     }
 };
 

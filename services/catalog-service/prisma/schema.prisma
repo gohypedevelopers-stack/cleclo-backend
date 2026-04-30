@@ -227,6 +227,8 @@ model CityConfig {
   id            String   @id @default(uuid())
   cityCode      String   @unique
   cityName      String
+  stateCode     String?
+  stateName     String?
   isEnabled     Boolean  @default(true)
   displayOrder  Int      @default(0)
   timezone      String   @default("Asia/Kolkata")
@@ -236,6 +238,8 @@ model CityConfig {
   updatedByAdminName String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+
+  @@index([stateCode])
 }
 
 model AreaConfig {

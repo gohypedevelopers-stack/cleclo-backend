@@ -1,22 +1,43 @@
 const prisma = require('../utils/prisma');
 
+function targetingWhere({ cityCode, vendorId, userSegment }) {
+    const clauses = [];
+
+    clauses.push(cityCode
+        ? { OR: [{ targetCityCodes: { has: cityCode } }, { targetCityCodes: { isEmpty: true } }] }
+        : { targetCityCodes: { isEmpty: true } });
+
+    clauses.push(vendorId
+        ? { OR: [{ targetVendorIds: { has: vendorId } }, { targetVendorIds: { isEmpty: true } }] }
+        : { targetVendorIds: { isEmpty: true } });
+
+    clauses.push(userSegment
+        ? { OR: [{ targetUserSegments: { has: userSegment } }, { targetUserSegments: { isEmpty: true } }] }
+        : { targetUserSegments: { isEmpty: true } });
+
+    return clauses;
+}
+
+function activeWindowWhere(now) {
+    return [
+        { OR: [{ startAt: null }, { startAt: { lte: now } }] },
+        { OR: [{ endAt: null }, { endAt: { gte: now } }] }
+    ];
+}
+
 const getHomeConfig = async (req, res) => {
     try {
         const { cityCode, vendorId, userSegment } = req.query;
         const now = new Date();
+        const targetClauses = targetingWhere({ cityCode, vendorId, userSegment });
 
         // 1. Fetch Banners
         const banners = await prisma.homeBanner.findMany({
             where: {
                 isActive: true,
                 AND: [
-                    { OR: [{ startAt: null }, { startAt: { lte: now } }] },
-                    { OR: [{ endAt: null }, { endAt: { gte: now } }] }
-                ],
-                // Simple targeting filter
-                OR: [
-                    { targetCityCodes: { has: cityCode } },
-                    { targetCityCodes: { isEmpty: true } }
+                    ...activeWindowWhere(now),
+                    ...targetClauses
                 ]
             },
             orderBy: { priorityRank: 'desc' }
@@ -27,12 +48,8 @@ const getHomeConfig = async (req, res) => {
             where: {
                 isActive: true,
                 AND: [
-                    { OR: [{ startAt: null }, { startAt: { lte: now } }] },
-                    { OR: [{ endAt: null }, { endAt: { gte: now } }] }
-                ],
-                OR: [
-                    { targetCityCodes: { has: cityCode } },
-                    { targetCityCodes: { isEmpty: true } }
+                    ...activeWindowWhere(now),
+                    ...targetClauses
                 ]
             },
             orderBy: { sortOrder: 'asc' }
@@ -43,12 +60,8 @@ const getHomeConfig = async (req, res) => {
             where: {
                 isActive: true,
                 AND: [
-                    { OR: [{ startAt: null }, { startAt: { lte: now } }] },
-                    { OR: [{ endAt: null }, { endAt: { gte: now } }] }
-                ],
-                OR: [
-                    { targetCityCodes: { has: cityCode } },
-                    { targetCityCodes: { isEmpty: true } }
+                    ...activeWindowWhere(now),
+                    ...targetClauses
                 ]
             },
             orderBy: { priorityRank: 'desc' }
@@ -58,7 +71,9 @@ const getHomeConfig = async (req, res) => {
             banners,
             videos,
             campaigns,
-            cityCode
+            cityCode,
+            vendorId,
+            userSegment
         });
     } catch (error) {
         res.status(500).json({ error: error.message });

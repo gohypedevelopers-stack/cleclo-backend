@@ -28,6 +28,10 @@ model Service {
   updatedAt  DateTime @updatedAt
   categories  Category[]
   color       String?
+  targetCityCodes    String[] @default([])
+  targetVendorIds    String[] @default([])
+  availableFrom DateTime?
+  availableUntil DateTime?
 }
 
 model Category {
@@ -45,6 +49,10 @@ model Category {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   subCategories SubCategory[]
+  targetCityCodes    String[] @default([])
+  targetVendorIds    String[] @default([])
+  availableFrom DateTime?
+  availableUntil DateTime?
 }
 
 model SubCategory {
@@ -61,6 +69,10 @@ model SubCategory {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   items     Item[]
+  targetCityCodes    String[] @default([])
+  targetVendorIds    String[] @default([])
+  availableFrom DateTime?
+  availableUntil DateTime?
 }
 
 model Item {
@@ -83,6 +95,8 @@ model Item {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
   priceOverrides ItemPriceOverride[]
+  targetCityCodes    String[] @default([])
+  targetVendorIds    String[] @default([])
 }
 
 model CatalogAvailabilityRule {

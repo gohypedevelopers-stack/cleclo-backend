@@ -1,5 +1,65 @@
 const prisma = require('../utils/prisma');
 
+const USER_SEGMENTS = new Set(['new_users', 'repeat_users']);
+
+function normalizeStringArray(value) {
+    if (!Array.isArray(value)) return [];
+    return [...new Set(
+        value
+            .map((item) => String(item || '').trim())
+            .filter(Boolean)
+    )];
+}
+
+function normalizeDate(value) {
+    if (value === undefined) return undefined;
+    if (value === null || value === '') return null;
+
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+        throw new Error(`Invalid date value: ${value}`);
+    }
+
+    return date;
+}
+
+function normalizeNumber(value, fallback = 0) {
+    if (value === undefined || value === null || value === '') return fallback;
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return fallback;
+    return parsed;
+}
+
+function normalizeBannerPayload(payload, existing = {}) {
+    const data = {
+        title: payload.title === undefined ? existing.title : String(payload.title || '').trim(),
+        subtitle: payload.subtitle === undefined ? existing.subtitle : String(payload.subtitle || '').trim() || null,
+        ctaLabel: payload.ctaLabel === undefined ? existing.ctaLabel : String(payload.ctaLabel || '').trim() || null,
+        ctaType: payload.ctaType === undefined ? existing.ctaType : String(payload.ctaType || '').trim() || null,
+        ctaTargetId: payload.ctaTargetId === undefined ? existing.ctaTargetId : String(payload.ctaTargetId || '').trim() || null,
+        ctaUrl: payload.ctaUrl === undefined ? existing.ctaUrl : String(payload.ctaUrl || '').trim() || null,
+        imageUrl: payload.imageUrl === undefined ? existing.imageUrl : payload.imageUrl || null,
+        isActive: payload.isActive === undefined ? existing.isActive ?? true : Boolean(payload.isActive),
+        priorityRank: normalizeNumber(payload.priorityRank, existing.priorityRank || 0),
+        targetCityCodes: payload.targetCityCodes === undefined ? existing.targetCityCodes || [] : normalizeStringArray(payload.targetCityCodes),
+        targetVendorIds: payload.targetVendorIds === undefined ? existing.targetVendorIds || [] : normalizeStringArray(payload.targetVendorIds),
+        targetUserSegments: payload.targetUserSegments === undefined
+            ? existing.targetUserSegments || []
+            : normalizeStringArray(payload.targetUserSegments).filter((segment) => USER_SEGMENTS.has(segment))
+    };
+
+    const startAt = normalizeDate(payload.startAt);
+    const endAt = normalizeDate(payload.endAt);
+    if (startAt !== undefined) data.startAt = startAt;
+    if (endAt !== undefined) data.endAt = endAt;
+
+    if (!data.title) {
+        throw new Error('Banner title is required');
+    }
+
+    return data;
+}
+
 // ============================================
 // BANNERS CRUD
 // ============================================
@@ -17,32 +77,38 @@ const getAllBanners = async (req, res) => {
 
 const createBanner = async (req, res) => {
     try {
-        const payload = req.body;
+        const payload = normalizeBannerPayload(req.body);
         const banner = await prisma.homeBanner.create({
             data: {
                 ...payload,
-                isActive: payload.isActive !== undefined ? payload.isActive : true,
-                priorityRank: payload.priorityRank || 0,
-                createdByAdminId: req.admin?.userId
+                createdByAdminId: req.admin?.userId,
+                createdByAdminName: req.admin?.name || 'Admin'
             }
         });
         res.status(201).json(banner);
     } catch (error) {
         console.error("CREATE Banner Error:", error);
-        res.status(500).json({ error: error.message });
+        res.status(400).json({ error: error.message });
     }
 };
 
 const updateBanner = async (req, res) => {
     try {
         const { id } = req.params;
+        const current = await prisma.homeBanner.findUnique({ where: { id } });
+        if (!current) return res.status(404).json({ error: 'Banner not found' });
+
         const banner = await prisma.homeBanner.update({
             where: { id },
-            data: { ...req.body, updatedByAdminId: req.admin?.userId }
+            data: {
+                ...normalizeBannerPayload(req.body, current),
+                updatedByAdminId: req.admin?.userId,
+                updatedByAdminName: req.admin?.name || 'Admin'
+            }
         });
         res.json(banner);
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        res.status(400).json({ error: error.message });
     }
 };
 

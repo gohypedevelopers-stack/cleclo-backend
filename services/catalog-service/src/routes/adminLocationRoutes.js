@@ -6,6 +6,10 @@ const router = express.Router();
 
 router.use(authenticateAdmin);
 
+// State / city option lookups for targeting controls
+router.get('/states', adminLocationController.getAllStates);
+router.get('/states/:stateCode/cities', adminLocationController.getCitiesByState);
+
 // Cities
 router.get('/cities', adminLocationController.getAllCities);
 router.post('/cities', adminLocationController.createCity);

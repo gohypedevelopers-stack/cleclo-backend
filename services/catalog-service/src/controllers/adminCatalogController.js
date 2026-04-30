@@ -92,7 +92,11 @@ const createService = async (req, res) => {
             defaultProcessingHours,
             expressOptionAllowed,
             surgePricingAllowed,
-            defaultCommissionPercent
+            defaultCommissionPercent,
+            targetCityCodes,
+            targetVendorIds,
+            availableFrom,
+            availableUntil
         } = req.body;
 
         if (!name || !String(name).trim()) {
@@ -112,6 +116,10 @@ const createService = async (req, res) => {
                 expressOptionAllowed: expressOptionAllowed !== undefined ? expressOptionAllowed : true,
                 surgePricingAllowed: surgePricingAllowed !== undefined ? surgePricingAllowed : true,
                 defaultCommissionPercent: toNumber(defaultCommissionPercent, 18),
+                targetCityCodes: Array.isArray(targetCityCodes) ? targetCityCodes : [],
+                targetVendorIds: Array.isArray(targetVendorIds) ? targetVendorIds : [],
+                availableFrom: toOptionalDate(availableFrom),
+                availableUntil: toOptionalDate(availableUntil),
                 ...adminMetadata(req, 'create')
             }
         });
@@ -135,7 +143,11 @@ const updateService = async (req, res) => {
             defaultProcessingHours,
             expressOptionAllowed,
             surgePricingAllowed,
-            defaultCommissionPercent
+            defaultCommissionPercent,
+            targetCityCodes,
+            targetVendorIds,
+            availableFrom,
+            availableUntil
         } = req.body;
         const data = adminMetadata(req);
 
@@ -150,6 +162,10 @@ const updateService = async (req, res) => {
         if (expressOptionAllowed !== undefined) data.expressOptionAllowed = expressOptionAllowed;
         if (surgePricingAllowed !== undefined) data.surgePricingAllowed = surgePricingAllowed;
         if (defaultCommissionPercent !== undefined) data.defaultCommissionPercent = toNumber(defaultCommissionPercent, 18);
+        if (targetCityCodes !== undefined) data.targetCityCodes = Array.isArray(targetCityCodes) ? targetCityCodes : [];
+        if (targetVendorIds !== undefined) data.targetVendorIds = Array.isArray(targetVendorIds) ? targetVendorIds : [];
+        if (availableFrom !== undefined) data.availableFrom = toOptionalDate(availableFrom);
+        if (availableUntil !== undefined) data.availableUntil = toOptionalDate(availableUntil);
 
         const service = await prisma.service.update({
             where: { id },
@@ -636,6 +652,62 @@ const pricePreview = async (req, res) => {
     }
 };
 
+const getItemPriceOverrides = async (req, res) => {
+    try {
+        const { cityCode, vendorId } = req.query;
+        const where = {};
+        if (cityCode) where.cityCode = cityCode;
+        if (vendorId) where.vendorId = vendorId;
+
+        const overrides = await prisma.itemPriceOverride.findMany({
+            where,
+            include: { item: true }
+        });
+        res.json(overrides);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+const saveItemPriceOverrides = async (req, res) => {
+    try {
+        const { overrides } = req.body;
+        if (!Array.isArray(overrides)) return res.status(400).json({ error: 'Overrides array required' });
+
+        const results = await Promise.all(
+            overrides.map(async (o) => {
+                const data = {
+                    itemId: o.itemId,
+                    cityCode: o.cityCode || null,
+                    vendorId: o.vendorId || null,
+                    customerPrice: toNumber(o.customerPrice, 0),
+                    vendorShare: toNumber(o.vendorShare, 0),
+                    gstPercent: toNumber(o.gstPercent, 0),
+                    isActive: o.isActive !== undefined ? o.isActive : true,
+                    ...adminMetadata(req)
+                };
+                
+                if (o.id) {
+                    return prisma.itemPriceOverride.update({
+                        where: { id: o.id },
+                        data
+                    });
+                } else {
+                    return prisma.itemPriceOverride.create({
+                        data: {
+                            ...data,
+                            ...adminMetadata(req, 'create')
+                        }
+                    });
+                }
+            })
+        );
+        res.json({ count: results.length, overrides: results });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
 module.exports = {
     getAllServices,
     createService,
@@ -660,5 +732,7 @@ module.exports = {
 
     bulkUploadItems,
     bulkPriceUpdate,
-    pricePreview
+    pricePreview,
+    getItemPriceOverrides,
+    saveItemPriceOverrides
 };

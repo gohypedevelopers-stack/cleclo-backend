@@ -239,6 +239,24 @@ function getPeriodLabel(period, startDate, endDate) {
   return 'Today';
 }
 
+function getPreviousPeriodRange(period, currentStart) {
+  const start = new Date(currentStart);
+  const end = new Date(currentStart);
+  
+  if (period === 'today' || period === 'yesterday') {
+    start.setDate(start.getDate() - 1);
+  } else if (period === 'this_week') {
+    start.setDate(start.getDate() - 7);
+  } else if (period === 'this_month') {
+    start.setMonth(start.getMonth() - 1);
+  } else if (period === 'this_year') {
+    start.setFullYear(start.getFullYear() - 1);
+  } else {
+    return null;
+  }
+  return { start, end };
+}
+
 function isWithinRange(value, range) {
   if (!value) return false;
   const date = new Date(value);
@@ -1033,6 +1051,53 @@ function buildFinanceSnapshot(settlementRows) {
   ];
 }
 
+function buildRevenueBreakdown(orderRows, range, periodLabel) {
+  const filtered = orderRows.filter(o => isWithinRange(o.createdAt, range));
+  const paid = filtered.filter(o => o.paymentStatus === 'Paid');
+  const refunded = filtered.filter(o => o.paymentStatus === 'Refunded');
+
+  const grossGMV = filtered.reduce((sum, o) => sum + Number(o.amount || 0), 0);
+  const platformCommission = paid.reduce((sum, o) => sum + (o.commissionAmount || 0), 0);
+  const refundAmount = refunded.reduce((sum, o) => sum + Number(o.amount || 0), 0);
+  
+  const paidRevenue = paid.reduce((sum, o) => sum + Number(o.amount || 0), 0);
+  const vendorPayout = paidRevenue - platformCommission;
+  const netPlatformRevenue = platformCommission; // For now
+
+  return [
+    {
+      key: 'gross_gmv',
+      title: 'Gross GMV',
+      value: formatCurrency(grossGMV),
+      description: `Total platform billings ${periodLabel.toLowerCase()}`
+    },
+    {
+      key: 'platform_commission',
+      title: 'Platform Commission',
+      value: formatCurrency(platformCommission),
+      description: 'Commission earned from successful orders'
+    },
+    {
+      key: 'vendor_payout',
+      title: 'Vendor Payout',
+      value: formatCurrency(vendorPayout),
+      description: 'Net amount payable to service partners'
+    },
+    {
+      key: 'refund_amount',
+      title: 'Refund Amount',
+      value: formatCurrency(refundAmount),
+      description: 'Total value of processed refunds'
+    },
+    {
+      key: 'net_platform_revenue',
+      title: 'Net Platform Revenue',
+      value: formatCurrency(netPlatformRevenue),
+      description: 'Final platform earnings after adjustments'
+    }
+  ];
+}
+
 function buildGrowthMetrics(orderRows) {
   if (orderRows.length === 0) {
     return [
@@ -1235,7 +1300,7 @@ function filterRows(rows, { range, search, status, vendor, city, date }) {
   });
 }
 
-function buildKpiCards(adminRole, filteredOrders, filteredSettlements, filteredIssues, monthOrders, allSettlements, periodLabel) {
+function buildKpiCards(adminRole, filteredOrders, filteredSettlements, filteredIssues, monthOrders, allSettlements, periodLabel, growthStats) {
   const paidOrders = filteredOrders.filter((order) => order.paymentStatus === 'Paid');
   const selectedRevenue = paidOrders.reduce((sum, order) => sum + order.amount, 0);
   const selectedCommission = paidOrders.reduce((sum, order) => sum + Number(order.commissionAmount || 0), 0);
@@ -1254,6 +1319,10 @@ function buildKpiCards(adminRole, filteredOrders, filteredSettlements, filteredI
     .filter((settlement) => settlement.status === 'Completed')
     .reduce((sum, settlement) => sum + settlement.amount, 0);
 
+  const revenueGrowthNote = growthStats?.revenueGrowth !== undefined 
+    ? `${growthStats.revenueGrowth >= 0 ? '+' : ''}${growthStats.revenueGrowth.toFixed(1)}% from previous period`
+    : 'Live order volume';
+
   const cards = {
     ordersPeriod: {
       key: 'orders_today',
@@ -1264,10 +1333,10 @@ function buildKpiCards(adminRole, filteredOrders, filteredSettlements, filteredI
     },
     revenuePeriod: {
       key: 'revenue_today',
-      title: `Revenue ${periodLabel}`,
+      title: `Total Revenue ${periodLabel}`,
       value: formatCurrency(selectedRevenue),
       accent: 'emerald',
-      note: 'Collected in selected view'
+      note: revenueGrowthNote
     },
     pendingOrders: {
       key: 'pending_orders',
@@ -1449,6 +1518,25 @@ async function getDashboardOverview({
 
   const filteredOrders = filterRows(orderRows, { range, search, status, vendor, city, date });
   const filteredSettlements = filterRows(settlementRows, { range, search, status, vendor, city, date });
+  
+  // Calculate Growth for Revenue
+  const prevRange = getPreviousPeriodRange(period, range.start);
+  let growthStats = { revenueGrowth: 0 };
+  if (prevRange) {
+    const currentRevenue = orderRows
+      .filter(o => isWithinRange(o.createdAt, range) && o.paymentStatus === 'Paid')
+      .reduce((sum, o) => sum + o.amount, 0);
+    const prevRevenue = orderRows
+      .filter(o => isWithinRange(o.createdAt, prevRange) && o.paymentStatus === 'Paid')
+      .reduce((sum, o) => sum + o.amount, 0);
+    
+    if (prevRevenue > 0) {
+      growthStats.revenueGrowth = ((currentRevenue - prevRevenue) / prevRevenue) * 100;
+    } else if (currentRevenue > 0) {
+      growthStats.revenueGrowth = 100;
+    }
+  }
+
   const filteredIssues = issueRecords.filter((issue) => {
     return (
       isWithinRange(issue.createdAt, range) &&
@@ -1504,8 +1592,10 @@ async function getDashboardOverview({
       filteredIssues,
       monthOrders,
       settlementRows,
-      periodLabel
+      periodLabel,
+      growthStats
     ),
+    revenueBreakdown: role === ADMIN_ROLES.OPERATIONS_ADMIN ? [] : buildRevenueBreakdown(orderRows, range, periodLabel),
     financeSnapshot: role === ADMIN_ROLES.OPERATIONS_ADMIN ? [] : buildFinanceSnapshot(settlementRows),
     growthMetrics: role === ADMIN_ROLES.SUPER_ADMIN ? buildGrowthMetrics(orderRows) : [],
     approvals: role === ADMIN_ROLES.FINANCE_ADMIN ? [] : approvals,

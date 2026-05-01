@@ -101,6 +101,8 @@ model VendorProfile {
   termsAccepted    Boolean @default(false)
   slaAccepted      Boolean @default(false)
   isApproved       Boolean @default(false)
+  isMaintenance    Boolean @default(false)
+  reopenDate       DateTime?
   approvedAt       DateTime?
   rejectedAt       DateTime?
 

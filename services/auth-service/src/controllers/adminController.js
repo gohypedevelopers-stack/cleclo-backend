@@ -56,7 +56,7 @@ const getAllUsers = async (req, res) => {
         const userIds = users.map(u => u.id);
 
         const [allOrders, allTickets] = await Promise.all([
-            fetchAllAdminOrders({ userIds }).catch((err) => {
+            fetchAllAdminOrders({ userIds }).then(o => { console.log(`[AdminController] Received ${o.length} orders`); return o; }).catch((err) => {
                 console.error('[AdminController] Order fetch failed:', err.message);
                 return [];
             }),
@@ -70,11 +70,22 @@ const getAllUsers = async (req, res) => {
 
         // Enrich users with analytical data
         const enrichedUsers = users.map(user => {
-            const userOrders = allOrders.filter(o => o.userId === user.id);
+            // Attribute orders based on role
+            let userOrders = [];
+            if (user.role === 'vendor') {
+                userOrders = allOrders.filter(o => o.vendorId === user.id);
+            } else if (user.role === 'rider') {
+                userOrders = allOrders.filter(o => o.riderId === user.id);
+            } else {
+                userOrders = allOrders.filter(o => o.userId === user.id);
+            }
+
             const userTickets = allTickets.filter(t => t.userId === user.id);
 
-            const totalOrders = userOrders.length;
-            const totalSpent = userOrders.reduce((sum, o) => sum + (Number(o.totalAmount) || 0), 0);
+            // TEST OVERRIDE: Forcing values to see if they appear in the UI
+            const totalOrders = (userOrders.length || 0) + 5;
+            const totalSpent = (userOrders.reduce((sum, o) => sum + (Number(o.totalAmount) || 0), 0) || 0) + 500;
+            
             const avgOrderValue = totalOrders > 0 ? totalSpent / totalOrders : 0;
             const lastOrderDate = userOrders.length > 0 
                 ? userOrders.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0].createdAt 
@@ -84,6 +95,7 @@ const getAllUsers = async (req, res) => {
 
             return {
                 ...user,
+                name: `[LIVE] ${user.name}`,
                 totalOrders,
                 totalSpent,
                 avgOrderValue,

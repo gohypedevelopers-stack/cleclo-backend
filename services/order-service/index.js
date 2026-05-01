@@ -24,7 +24,11 @@ app.get('/internal/orders', async (req, res) => {
         const where = {};
         if (userIds) {
             const idList = Array.isArray(userIds) ? userIds : String(userIds).split(',');
-            where.userId = { in: idList };
+            where.OR = [
+                { userId: { in: idList } },
+                { vendorId: { in: idList } },
+                { riderId: { in: idList } }
+            ];
         }
 
         const orders = await prisma.order.findMany({

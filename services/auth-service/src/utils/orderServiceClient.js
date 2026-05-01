@@ -1,5 +1,5 @@
 const ORDER_SERVICE_URL =
-  process.env.ORDER_SERVICE_URL?.replace(/\/$/, '') || 'http://localhost:3003';
+  process.env.ORDER_SERVICE_URL?.replace(/\/$/, '') || 'http://127.0.0.1:3003';
 
 function buildUrl(path, params = {}) {
   const url = new URL(`${ORDER_SERVICE_URL}${path}`);

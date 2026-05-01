@@ -4,7 +4,22 @@ const bcrypt = require('bcryptjs');
 const prisma = new PrismaClient();
 
 async function main() {
-    console.log('🌱 Seeding Auth Service database...');
+    console.log('🌱 Cleaning and Seeding Auth Service database...');
+
+    // Clear existing data to avoid unique constraint errors during demo seeding
+    await prisma.supportTicket.deleteMany();
+    await prisma.address.deleteMany();
+    await prisma.walletTransaction.deleteMany();
+    await prisma.wallet.deleteMany();
+    await prisma.outlet.deleteMany();
+    await prisma.vendorProfile.deleteMany();
+    await prisma.vendorSettlement.deleteMany();
+    await prisma.adminLoginEvent.deleteMany();
+    await prisma.adminLoginAttempt.deleteMany();
+    await prisma.adminAuthChallenge.deleteMany();
+    await prisma.paymentMethod.deleteMany();
+    await prisma.loyaltyHistory.deleteMany();
+    await prisma.user.deleteMany();
 
     // Hash password for all users
     const hashedPassword = await bcrypt.hash('password123', 10);
@@ -69,16 +84,11 @@ async function main() {
     // 2. Create Regular Customers (10 customers)
     const customers = [];
     const customerNames = [
+        { id: 'alice-freeman-uuid-12345', name: 'Alice Freeman', email: 'alice@example.com', phone: '9898989898', type: 'vip' },
         { id: '11111111-1111-1111-1111-111111111111', name: 'Ravindra Kumar', email: 'ravindra@example.com', phone: '9876543210', type: 'vip' },
         { id: '22222222-2222-2222-2222-222222222222', name: 'Priya Sharma', email: 'priya@example.com', phone: '9876543211', type: 'regular' },
         { id: '33333333-3333-3333-3333-333333333333', name: 'Amit Patel', email: 'amit@example.com', phone: '9876543212', type: 'top_spender' },
         { name: 'Sneha Reddy', email: 'sneha@example.com', phone: '9876543213', type: 'regular' },
-        { name: 'Rajesh Singh', email: 'rajesh@example.com', phone: '9876543214', type: 'new' },
-        { name: 'Kavita Desai', email: 'kavita@example.com', phone: '9876543215', type: 'regular' },
-        { name: 'Vikas Gupta', email: 'vikas@example.com', phone: '9876543216', type: 'vip' },
-        { name: 'Anjali Mehta', email: 'anjali@example.com', phone: '9876543217', type: 'regular' },
-        { name: 'Suresh Iyer', email: 'suresh@example.com', phone: '9876543218', type: 'top_spender' },
-        { name: 'Neha Joshi', email: 'neha@example.com', phone: '9876543219', type: 'regular' },
     ];
 
     for (const customerData of customerNames) {

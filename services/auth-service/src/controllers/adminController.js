@@ -12,6 +12,8 @@ function normalizeSettlementStatus(status) {
 // USER MANAGEMENT
 // ============================================
 
+const { fetchAllAdminOrders } = require('../utils/orderServiceClient');
+
 // Get all users (can filter by role, status, type and paginate)
 const getAllUsers = async (req, res) => {
     try {
@@ -51,8 +53,60 @@ const getAllUsers = async (req, res) => {
             prisma.user.count({ where })
         ]);
 
+        const userIds = users.map(u => u.id);
+
+        const [allOrders, allTickets] = await Promise.all([
+            fetchAllAdminOrders({ userIds }).then(o => { console.log(`[AdminController] Received ${o.length} orders`); return o; }).catch((err) => {
+                console.error('[AdminController] Order fetch failed:', err.message);
+                return [];
+            }),
+            prisma.supportTicket.findMany({
+                where: { 
+                    userId: { in: userIds },
+                    category: { in: ['order', 'complaint', 'orders'] } 
+                }
+            })
+        ]);
+
+        // Enrich users with analytical data
+        const enrichedUsers = users.map(user => {
+            // Attribute orders based on role
+            let userOrders = [];
+            if (user.role === 'vendor') {
+                userOrders = allOrders.filter(o => o.vendorId === user.id);
+            } else if (user.role === 'rider') {
+                userOrders = allOrders.filter(o => o.riderId === user.id);
+            } else {
+                userOrders = allOrders.filter(o => o.userId === user.id);
+            }
+
+            const userTickets = allTickets.filter(t => t.userId === user.id);
+
+            // TEST OVERRIDE: Forcing values to see if they appear in the UI
+            const totalOrders = (userOrders.length || 0) + 5;
+            const totalSpent = (userOrders.reduce((sum, o) => sum + (Number(o.totalAmount) || 0), 0) || 0) + 500;
+            
+            const avgOrderValue = totalOrders > 0 ? totalSpent / totalOrders : 0;
+            const lastOrderDate = userOrders.length > 0 
+                ? userOrders.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0].createdAt 
+                : null;
+            const refundCount = userOrders.filter(o => o.paymentStatus === 'refunded').length;
+            const complaintCount = userTickets.length;
+
+            return {
+                ...user,
+                name: `[LIVE] ${user.name}`,
+                totalOrders,
+                totalSpent,
+                avgOrderValue,
+                lastOrderDate,
+                refundCount,
+                complaintCount
+            };
+        });
+
         res.json({
-            users,
+            users: enrichedUsers,
             pagination: {
                 total,
                 page: parseInt(page),

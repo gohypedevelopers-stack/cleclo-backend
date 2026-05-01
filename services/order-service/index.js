@@ -18,8 +18,21 @@ app.use('/orders', orderRoutes);
 // Used by auth-service dashboard aggregation
 app.get('/internal/orders', async (req, res) => {
     try {
+        const { userIds } = req.query;
         const prisma = require('./src/utils/prisma');
+        
+        const where = {};
+        if (userIds) {
+            const idList = Array.isArray(userIds) ? userIds : String(userIds).split(',');
+            where.OR = [
+                { userId: { in: idList } },
+                { vendorId: { in: idList } },
+                { riderId: { in: idList } }
+            ];
+        }
+
         const orders = await prisma.order.findMany({
+            where,
             include: {
                 items: {
                     include: { images: true }

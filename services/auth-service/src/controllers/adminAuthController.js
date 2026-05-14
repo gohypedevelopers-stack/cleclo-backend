@@ -528,6 +528,10 @@ async function verifyAdminOtp(req, res) {
             `[ADMIN_LOGIN_ALERT] ${adminUser.email}: ${alertMessage} | IP: ${ipAddress || 'unknown'}`
         );
 
+        // Send Email Alert
+        const { sendLoginAlertEmail } = require('../utils/emailService');
+        sendLoginAlertEmail(adminUser.email, alertMessage, ipAddress);
+
         return res.json({
             message: 'Login successful.',
             token,

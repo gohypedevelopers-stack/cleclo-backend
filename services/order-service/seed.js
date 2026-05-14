@@ -2,9 +2,9 @@ const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
 const DATA = {
-  vendors: ["v1-uuid-eco", "v2-uuid-sparkle"],
+  vendors: ["44444444-4444-4444-4444-444444444444", "55555555-5555-5555-5555-555555555555"],
   riders: ["r1-uuid-rahul", "r2-uuid-amit"],
-  customers: ["c1-uuid-aniket", "c2-uuid-priya"]
+  customers: ["alice-freeman-uuid-12345", "11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222", "33333333-3333-3333-3333-333333333333"]
 };
 
 async function seed() {

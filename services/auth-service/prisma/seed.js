@@ -210,10 +210,11 @@ async function main() {
             bankVerified: false,
             termsAccepted: false,
             slaAccepted: false,
-            ownerIdProofUrl: null,
-            businessProofUrl: null,
+            ownerIdProofUrl: 'https://example.com/vendor4-owner-id.pdf',
+            businessProofUrl: 'https://example.com/vendor4-business-proof.pdf',
             lat: 19.0330,
             lng: 72.8569,
+            createdAt: new Date(Date.now() - 95 * 24 * 60 * 60 * 1000), // 95 days ago
         },
         {
             name: 'Vendor 5 - Elite Dry Clean',
@@ -246,6 +247,7 @@ async function main() {
                 role: 'vendor',
                 status: 'active',
                 isVerified: true,
+                createdAt: vData.createdAt || new Date(),
                 addresses: {
                     create: [
                         {
@@ -414,6 +416,43 @@ async function main() {
         ],
     });
 
+    // 6. Create Vendor Settlements
+    const settlementData = [];
+    for (let i = 0; i < vendors.length; i++) {
+        const vendor = vendors[i];
+        if (i % 2 === 0) {
+            // Completed settlement
+            settlementData.push({
+                vendorId: vendor.id,
+                amount: 5420.50,
+                grossAmount: 6500.00,
+                commissionAmount: 1079.50,
+                orderCount: 12,
+                status: 'PAID',
+                paidAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
+                periodStart: new Date(Date.now() - 9 * 24 * 60 * 60 * 1000),
+                periodEnd: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
+            });
+        }
+        
+        // Pending settlement
+        settlementData.push({
+            vendorId: vendor.id,
+            amount: 2840.00,
+            grossAmount: 3400.00,
+            commissionAmount: 560.00,
+            orderCount: 8,
+            status: 'PENDING',
+            periodStart: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
+            periodEnd: new Date(),
+        });
+    }
+
+    await prisma.vendorSettlement.createMany({
+        data: settlementData
+    });
+
+    console.log(`   - Created ${settlementData.length} settlements`);
     console.log('✅ Auth Service seeding completed!');
     console.log(`   - Created ${admins.length} admins`);
     console.log(`   - Created ${customers.length} customers`);

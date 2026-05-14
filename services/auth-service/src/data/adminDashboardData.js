@@ -7,7 +7,9 @@ const { persistIssueClaimImage } = require('../utils/adminIssueAssetStorage');
 const INR_FORMATTER = new Intl.NumberFormat('en-IN', {
   style: 'currency',
   currency: 'INR',
-  maximumFractionDigits: 0
+  notation: 'compact',
+  compactDisplay: 'short',
+  maximumFractionDigits: 1
 });
 
 const ROOT_CAUSES = ['Vendor Fault', 'Rider Fault', 'Customer Fault', 'System Issue'];
@@ -917,9 +919,13 @@ function buildOrderRows(orders, userMap, issueAlerts) {
       issueSummary:
         issueAlert && getIssueStatusLabel(issueAlert.status) !== 'Resolved'
           ? {
+              id: issueAlert.id,
+              orderId: order.id,
+              type: issueAlert.issueType,
               severity: getIssueSeverityLabel(issueAlert.severity),
-              title: issueAlert.issueType,
-              summary: issueAlert.summary
+              vendor: vendor ? getVendorDisplayName(vendor) : 'Unassigned',
+              summary: issueAlert.summary,
+              city
             }
           : null,
       commissionAmount,
@@ -1300,7 +1306,13 @@ function filterRows(rows, { range, search, status, vendor, city, date }) {
   });
 }
 
-function buildKpiCards(adminRole, filteredOrders, filteredSettlements, filteredIssues, monthOrders, allSettlements, periodLabel, growthStats) {
+function buildKpiCards(adminRole, filteredOrders, filteredSettlements, filteredIssues, monthOrders, allSettlements, periodLabel, growthStats, allUsers) {
+  const activeUserCount = allUsers.filter(u => u.role === 'customer').length;
+  const activeVendorCount = allUsers.filter(u => u.role === 'vendor' && u.vendorProfile?.isApproved).length;
+  
+  const monthPaidOrders = monthOrders.filter((order) => order.paymentStatus === 'Paid');
+  const monthRevenue = monthPaidOrders.reduce((sum, order) => sum + order.amount, 0);
+  
   const paidOrders = filteredOrders.filter((order) => order.paymentStatus === 'Paid');
   const selectedRevenue = paidOrders.reduce((sum, order) => sum + order.amount, 0);
   const selectedCommission = paidOrders.reduce((sum, order) => sum + Number(order.commissionAmount || 0), 0);
@@ -1324,103 +1336,89 @@ function buildKpiCards(adminRole, filteredOrders, filteredSettlements, filteredI
     : 'Live order volume';
 
   const cards = {
+    activeUsers: {
+      key: 'active_users',
+      title: 'Active Users',
+      value: activeUserCount,
+      accent: 'blue'
+    },
+    activeVendors: {
+      key: 'active_vendors',
+      title: 'Active Vendors',
+      value: activeVendorCount,
+      accent: 'indigo'
+    },
     ordersPeriod: {
       key: 'orders_today',
       title: `Orders ${periodLabel}`,
       value: filteredOrders.length,
-      accent: 'blue',
-      note: 'Live order volume'
+      accent: 'blue'
     },
     revenuePeriod: {
       key: 'revenue_today',
-      title: `Total Revenue ${periodLabel}`,
+      title: `Revenue ${periodLabel}`,
       value: formatCurrency(selectedRevenue),
-      accent: 'emerald',
-      note: revenueGrowthNote
+      accent: 'emerald'
     },
     pendingOrders: {
       key: 'pending_orders',
       title: 'Pending Orders',
       value: pendingOrders,
-      accent: 'amber',
-      note: 'Needs action'
-    },
-    delayCount: {
-      key: 'pickup_delay_count',
-      title: 'Pickup Delays',
-      value: delayedOrders,
-      accent: 'orange',
-      note: 'Orders breaching pickup SLA'
+      accent: 'amber'
     },
     issueCount: {
       key: 'issue_reported_count',
       title: 'Issue Reported Count',
       value: filteredIssues.filter((issue) => issue.status !== 'Resolved').length,
-      accent: 'red',
-      note: 'Operational risk'
+      accent: 'red'
     },
     avgOrderValue: {
       key: 'avg_order_value',
       title: 'Avg Order Value (AOV)',
       value: formatCurrency(avgOrderValue),
-      accent: 'indigo',
-      note: 'Average paid basket'
-    },
-    grossRevenue: {
-      key: 'gross_platform_revenue',
-      title: `Gross Revenue ${periodLabel}`,
-      value: formatCurrency(selectedRevenue),
-      accent: 'emerald',
-      note: 'Gross billings'
-    },
-    netCommission: {
-      key: 'net_commission_earned',
-      title: `Commission ${periodLabel}`,
-      value: formatCurrency(selectedCommission),
-      accent: 'blue',
-      note: 'Platform earnings'
+      accent: 'indigo'
     },
     payoutDue: {
       key: 'vendor_payout_due',
       title: 'Vendor Payout Due',
       value: formatCurrency(payoutDueAmount),
-      accent: 'violet',
-      note: 'Awaiting payout release'
+      accent: 'violet'
     },
     settlementPendingAmount: {
       key: 'settlement_pending_amount',
       title: 'Settlement Pending Amount',
       value: formatCurrency(payoutDueAmount),
-      accent: 'slate',
-      note: 'Pending settlement exposure'
+      accent: 'slate'
     },
-    settlementsCompleted: {
-      key: 'settlements_completed',
-      title: `Settlements ${periodLabel}`,
-      value: formatCurrency(settlementsCompletedAmount),
-      accent: 'emerald',
-      note: 'Completed in selected view'
+    grossPlatformRevenue: {
+      key: 'gross_platform_revenue_month',
+      title: 'Gross Platform Revenue (This Month)',
+      value: formatCurrency(monthRevenue),
+      accent: 'emerald'
+    },
+    netCommissionEarned: {
+      key: 'net_commission_earned',
+      title: 'Net Commission Earned',
+      value: formatCurrency(selectedCommission),
+      accent: 'blue'
     }
   };
 
-  if (adminRole === ADMIN_ROLES.OPERATIONS_ADMIN) {
-    return [cards.ordersPeriod, cards.delayCount, cards.pendingOrders, cards.issueCount];
-  }
-
   if (adminRole === ADMIN_ROLES.FINANCE_ADMIN) {
-    return [cards.grossRevenue, cards.netCommission, cards.payoutDue, cards.settlementPendingAmount, cards.settlementsCompleted];
+    return [cards.grossPlatformRevenue, cards.netCommissionEarned, cards.payoutDue, cards.settlementPendingAmount];
   }
 
   return [
+    cards.activeUsers,
+    cards.activeVendors,
     cards.ordersPeriod,
-    cards.revenuePeriod,
+    cards.grossPlatformRevenue,
     cards.pendingOrders,
     cards.issueCount,
     cards.avgOrderValue,
-    cards.grossRevenue,
-    cards.netCommission,
     cards.payoutDue,
-    cards.settlementPendingAmount
+    cards.settlementPendingAmount,
+    cards.netCommissionEarned
   ];
 }
 
@@ -1593,13 +1591,15 @@ async function getDashboardOverview({
       monthOrders,
       settlementRows,
       periodLabel,
-      growthStats
+      growthStats,
+      context.users
     ),
     revenueBreakdown: role === ADMIN_ROLES.OPERATIONS_ADMIN ? [] : buildRevenueBreakdown(orderRows, range, periodLabel),
     financeSnapshot: role === ADMIN_ROLES.OPERATIONS_ADMIN ? [] : buildFinanceSnapshot(settlementRows),
     growthMetrics: role === ADMIN_ROLES.SUPER_ADMIN ? buildGrowthMetrics(orderRows) : [],
     approvals: role === ADMIN_ROLES.FINANCE_ADMIN ? [] : approvals,
     issueDigest: role === ADMIN_ROLES.FINANCE_ADMIN ? [] : buildIssueDigest(issueRecords),
+    riders: role === ADMIN_ROLES.OPERATIONS_ADMIN || role === ADMIN_ROLES.SUPER_ADMIN ? buildRiderSnapshot(context.orders, context.users) : [],
     primaryTable:
       role === ADMIN_ROLES.FINANCE_ADMIN
         ? {
@@ -1875,6 +1875,49 @@ async function updateIssue(issueId, payload = {}) {
   }
 
   return updatedIssue;
+}
+
+function buildRiderSnapshot(orders, users) {
+  const riders = users.filter(u => u.role === 'rider');
+  const riderStats = new Map();
+
+  riders.forEach(rider => {
+    riderStats.set(rider.id, {
+      id: rider.id,
+      name: rider.name,
+      deliveries: 0,
+      issues: 0,
+      delays: 0,
+      rating: rider.vendorProfile?.rating || 4.5,
+      status: rider.status === 'active' ? 'online' : 'offline'
+    });
+  });
+
+  orders.forEach(order => {
+    if (!order.riderId) return;
+    const stats = riderStats.get(order.riderId);
+    if (!stats) return;
+
+    if (order.status === 'delivered') stats.deliveries += 1;
+    if (order.status === 'pickup_delayed') stats.delays += 1;
+    if (order.hasIssue) stats.issues += 1;
+    
+    // If out for delivery, set status to on_delivery
+    if (order.status === 'out_for_delivery' || order.status === 'picked_up') {
+      stats.status = 'on_delivery';
+    }
+  });
+
+  return Array.from(riderStats.values())
+    .map(r => {
+      const onTime = r.deliveries === 0 ? 100 : Math.round(((r.deliveries - r.delays) / r.deliveries) * 100);
+      return {
+        ...r,
+        onTime: Math.max(0, onTime)
+      };
+    })
+    .sort((a, b) => b.deliveries - a.deliveries)
+    .slice(0, 10);
 }
 
 module.exports = {

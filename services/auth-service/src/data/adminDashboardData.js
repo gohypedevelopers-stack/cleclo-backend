@@ -1193,16 +1193,23 @@ function buildIssueDigest(issueRecords) {
       if (left.unread !== right.unread) return left.unread ? -1 : 1;
       return new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime();
     })
-    .slice(0, 5)
+    .slice(0, 20)
     .map((issue) => ({
       id: issue.id,
       orderId: issue.orderId || buildTransactionId(issue.supportTicketId || issue.id, 'TKT'),
+      supportTicketId: issue.supportTicketId || null,
       type: issue.issueType,
       severity: issue.severity,
       vendor: issue.vendorName,
       summary: issue.summary,
       city: issue.city,
-      unread: issue.unread
+      unread: issue.unread,
+      status: issue.status,
+      assignedTo: issue.assignedTo || null,
+      createdAt: issue.createdAt,
+      vendorRiskLevel: issue.vendorRisk?.level || null,
+      financialRiskAmount: issue.financialRisk ? `\u20b9${issue.financialRisk.amount}` : null,
+      refundStatus: issue.refundStatus || null
     }));
 }
 
@@ -1922,6 +1929,10 @@ async function updateIssue(issueId, payload = {}) {
     data.status = ISSUE_ALERT_STATUSES.ESCALATED;
     data.escalatedTo =
       payload.escalatedTo || currentIssue.escalatedTo || defaultEscalationTarget(currentIssue.issueType);
+    // Auto-assign to Operations Team so it appears on Ops Dashboard
+    if (!currentIssue.assignedTo) {
+      data.assignedTo = 'Operations Team';
+    }
   }
 
   if (payload.action === 'resolve') {

@@ -11,6 +11,7 @@ const ISSUE_ACTIONS = new Set(['assign', 'review', 'escalate', 'resolve']);
 const ROOT_CAUSES = new Set(['Vendor Fault', 'Rider Fault', 'Customer Fault', 'System Issue']);
 const TEAM_MEMBERS = new Set([
     'Operations Head',
+    'Operations Team',
     'Claims Desk',
     'Customer Success',
     'Dispatch Team',

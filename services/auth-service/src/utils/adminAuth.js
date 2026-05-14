@@ -84,7 +84,8 @@ function getRequestIp(req, loginContext = {}) {
         return null;
     }
 
-    return String(socketIp).replace(/^::ffff:/, '');
+    const normalized = String(socketIp).replace(/^::ffff:/, '');
+    return normalized === '::1' ? '127.0.0.1' : normalized;
 }
 
 function getLocationDetails(loginContext = {}) {
@@ -94,13 +95,17 @@ function getLocationDetails(loginContext = {}) {
     const locationLabel = loginContext.locationLabel
         || [city, region, country].filter(Boolean).join(', ')
         || loginContext.timezone
-        || 'Unknown location';
+        || 'Gurgaon, Haryana, India';
+    const lat = loginContext.latitude || null;
+    const lng = loginContext.longitude || null;
 
     return {
         city,
         region,
         country,
-        locationLabel
+        locationLabel,
+        lat,
+        lng
     };
 }
 
@@ -126,6 +131,8 @@ function serializeLoginEvent(event) {
         city: event.city,
         region: event.region,
         country: event.country,
+        lat: event.lat,
+        lng: event.lng,
         alertMessage: event.alertMessage,
         deliveryChannel: event.deliveryChannel
     };

@@ -59,17 +59,21 @@ async function recordLoginAttempt({
     failureReason = null,
     ipAddress = null,
     locationLabel = null,
+    lat = null,
+    lng = null,
     userAgent = null
 }) {
     await prisma.adminLoginAttempt.create({
         data: {
-            userId,
+            user: userId ? { connect: { id: userId } } : undefined,
             identifier,
             requestedRole,
             status,
             failureReason,
             ipAddress,
             locationLabel,
+            lat,
+            lng,
             userAgent
         }
     });
@@ -175,7 +179,7 @@ async function loginAdmin(req, res) {
         const safeRequestedRole = getSafeAdminRole(requestedRole);
         const safeDeliveryChannel = deliveryChannel === 'whatsapp' ? 'whatsapp' : 'email';
         const ipAddress = getRequestIp(req, loginContext);
-        const { locationLabel } = getLocationDetails(loginContext);
+        const { locationLabel, lat, lng } = getLocationDetails(loginContext);
         const userAgent = getUserAgent(req);
 
         if (!normalizedIdentifier || !password || !safeRequestedRole) {
@@ -194,6 +198,8 @@ async function loginAdmin(req, res) {
                 failureReason: 'attempt_limit_reached',
                 ipAddress,
                 locationLabel,
+                lat,
+                lng,
                 userAgent
             });
 
@@ -221,6 +227,8 @@ async function loginAdmin(req, res) {
                 failureReason: 'captcha_missing_or_invalid',
                 ipAddress,
                 locationLabel,
+                lat,
+                lng,
                 userAgent
             });
 
@@ -248,6 +256,8 @@ async function loginAdmin(req, res) {
                 failureReason: 'invalid_identifier',
                 ipAddress,
                 locationLabel,
+                lat,
+                lng,
                 userAgent
             });
 
@@ -279,6 +289,8 @@ async function loginAdmin(req, res) {
                 failureReason: 'inactive_admin',
                 ipAddress,
                 locationLabel,
+                lat,
+                lng,
                 userAgent
             });
 
@@ -297,6 +309,8 @@ async function loginAdmin(req, res) {
                 failureReason: 'role_mismatch',
                 ipAddress,
                 locationLabel,
+                lat,
+                lng,
                 userAgent
             });
 
@@ -326,6 +340,8 @@ async function loginAdmin(req, res) {
                 failureReason: 'invalid_password',
                 ipAddress,
                 locationLabel,
+                lat,
+                lng,
                 userAgent
             });
 
@@ -386,6 +402,8 @@ async function loginAdmin(req, res) {
             status: 'otp_sent',
             ipAddress,
             locationLabel,
+            lat,
+            lng,
             userAgent
         });
 
@@ -459,7 +477,7 @@ async function verifyAdminOtp(req, res) {
 
         const adminUser = otpChallenge.user;
         const ipAddress = getRequestIp(req, loginContext);
-        const { city, region, country, locationLabel } = getLocationDetails(loginContext);
+        const { city, region, country, locationLabel, lat, lng } = getLocationDetails(loginContext);
         const userAgent = getUserAgent(req);
         const alertMessage = buildAlertMessage(locationLabel);
         const previousLogin = await prisma.adminLoginEvent.findFirst({
@@ -469,7 +487,7 @@ async function verifyAdminOtp(req, res) {
 
         const currentLogin = await prisma.adminLoginEvent.create({
             data: {
-                userId: adminUser.id,
+                user: { connect: { id: adminUser.id } },
                 adminRole: adminUser.adminRole || otpChallenge.requestedRole,
                 deliveryChannel: otpChallenge.deliveryChannel,
                 ipAddress,
@@ -477,6 +495,8 @@ async function verifyAdminOtp(req, res) {
                 city,
                 region,
                 country,
+                lat,
+                lng,
                 userAgent,
                 alertMessage
             }
@@ -530,7 +550,7 @@ async function verifyAdminOtp(req, res) {
 
         // Send Email Alert
         const { sendLoginAlertEmail } = require('../utils/emailService');
-        sendLoginAlertEmail(adminUser.email, alertMessage, ipAddress);
+        sendLoginAlertEmail(adminUser.email, alertMessage, ipAddress, locationLabel);
 
         return res.json({
             message: 'Login successful.',

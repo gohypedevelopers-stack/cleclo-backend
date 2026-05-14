@@ -308,6 +308,8 @@ model AdminLoginAttempt {
   failureReason String?
   ipAddress     String?
   locationLabel String?
+  lat           Float?
+  lng           Float?
   userAgent     String?
   createdAt     DateTime @default(now())
   user          User?    @relation("AdminAttemptUser", fields: [userId], references: [id])
@@ -325,6 +327,8 @@ model AdminLoginEvent {
   city            String?
   region          String?
   country         String?
+  lat             Float?
+  lng             Float?
   userAgent       String?
   alertMessage    String?
   createdAt       DateTime @default(now())

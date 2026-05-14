@@ -1272,13 +1272,17 @@ function buildIssueRecords(issueAlerts, userMap) {
   });
 }
 
-function filterRows(rows, { range, search, status, vendor, city, date }) {
+function filterRows(rows, { range, search, status, vendor, city, tableStartDate, tableEndDate }) {
   return rows.filter((row) => {
     const createdAt = row.createdAt || row.date;
 
+    const inRange = (tableStartDate || tableEndDate)
+      ? ((!tableStartDate || toIsoDate(createdAt) >= tableStartDate) &&
+         (!tableEndDate || toIsoDate(createdAt) <= tableEndDate))
+      : isWithinRange(createdAt, range);
+
     return (
-      isWithinRange(createdAt, range) &&
-      (!date || toIsoDate(createdAt) === date) &&
+      inRange &&
       (status === 'all' || row.status === status) &&
       (vendor === 'all' || row.vendor === vendor) &&
       (city === 'all' || row.city === city) &&
@@ -1328,8 +1332,48 @@ function buildKpiCards(adminRole, filteredOrders, filteredSettlements, filteredI
     .reduce((sum, settlement) => sum + settlement.amount, 0);
     
   const settlementsCompletedAmount = filteredSettlements
-    .filter((settlement) => settlement.status === 'Completed')
+    .filter((settlement) => settlement.status === 'PAID' || settlement.status === 'Completed')
     .reduce((sum, settlement) => sum + settlement.amount, 0);
+    
+  const failedTransactionsCount = filteredSettlements.filter(s => s.status === 'FAILED' || s.status === 'Failed').length;
+
+  // Strategic Growth Metrics (BI) - Using month data for strategic depth
+  const biOrders = monthOrders;
+  const customerOrdersMap = new Map();
+  biOrders.forEach(order => {
+    const phone = order.customerPhone || order.userId;
+    if (phone) customerOrdersMap.set(phone, (customerOrdersMap.get(phone) || 0) + 1);
+  });
+  const totalCustomersWithOrders = customerOrdersMap.size;
+  const repeatCustomersCount = Array.from(customerOrdersMap.values()).filter(count => count > 1).length;
+  const customerRetentionRate = totalCustomersWithOrders === 0 ? 0 : (repeatCustomersCount / totalCustomersWithOrders) * 100;
+  const repeatOrdersCount = biOrders.filter(o => (customerOrdersMap.get(o.customerPhone || o.userId) || 0) > 1).length;
+  const repeatOrderRate = biOrders.length === 0 ? 0 : (repeatOrdersCount / biOrders.length) * 100;
+
+  const vendorStatsMap = new Map();
+  biOrders.forEach(order => {
+    const vName = order.vendor || 'Unknown';
+    const vStats = vendorStatsMap.get(vName) || { revenue: 0, count: 0, issues: 0, completed: 0, turnaround: 0 };
+    vStats.revenue += Number(order.amount || 0);
+    vStats.count += 1;
+    if (order.status === 'Issue Reported' || order.status === 'Pickup Delayed') vStats.issues += 1;
+    if (order.turnaroundHours !== undefined && order.turnaroundHours !== null) {
+      vStats.completed += 1;
+      vStats.turnaround += Number(order.turnaroundHours);
+    }
+    vendorStatsMap.set(vName, vStats);
+  });
+  const vendorPerformance = Array.from(vendorStatsMap.entries()).map(([name, s]) => ({
+    name,
+    issueRate: s.count === 0 ? 0 : (s.issues / s.count),
+    revenue: s.revenue,
+    avgTurnaround: s.completed === 0 ? 0 : (s.turnaround / s.completed)
+  }));
+  const topVendor = vendorPerformance.sort((a,b) => b.revenue - a.revenue)[0]?.name || 'N/A';
+  const worstVendor = vendorPerformance.sort((a,b) => b.issueRate - a.issueRate)[0]?.name || 'N/A';
+  const systemAvgTurnaround = vendorPerformance.filter(v => v.avgTurnaround > 0).reduce((sum, v) => sum + v.avgTurnaround, 0) / (vendorPerformance.filter(v => v.avgTurnaround > 0).length || 1);
+
+
 
   const revenueGrowthNote = growthStats?.revenueGrowth !== undefined 
     ? `${growthStats.revenueGrowth >= 0 ? '+' : ''}${growthStats.revenueGrowth.toFixed(1)}% from previous period`
@@ -1401,24 +1445,102 @@ function buildKpiCards(adminRole, filteredOrders, filteredSettlements, filteredI
       title: 'Net Commission Earned',
       value: formatCurrency(selectedCommission),
       accent: 'blue'
+    },
+    settlementsCompleted: {
+      key: 'settlements_completed',
+      title: 'Settlements Completed',
+      value: formatCurrency(settlementsCompletedAmount),
+      accent: 'emerald'
+    },
+    failedTransactions: {
+      key: 'failed_transactions',
+      title: 'Failed Transactions',
+      value: failedTransactionsCount,
+      accent: 'red'
+    },
+    pickupDelays: {
+      key: 'pickup_delay_count',
+      title: 'Active Pickup Delays',
+      value: delayedOrders,
+      accent: 'orange'
+    },
+    pendingSettlementsCount: {
+      key: 'pending_settlements_count',
+      title: 'Queue: Pending Settlements',
+      value: allSettlements.filter(s => s.status === 'Pending' || s.status === 'Processing').length,
+      accent: 'amber'
+    },
+    customerRetention: {
+      key: 'customer_retention',
+      title: 'Customer Retention %',
+      value: `${customerRetentionRate.toFixed(1)}%`,
+      accent: 'emerald'
+    },
+    repeatOrderRate: {
+      key: 'repeat_order_rate',
+      title: 'Repeat Order Rate',
+      value: `${repeatOrderRate.toFixed(1)}%`,
+      accent: 'blue'
+    },
+    topVendor: {
+      key: 'top_vendor',
+      title: 'Top Performing Vendor',
+      value: topVendor,
+      accent: 'indigo'
+    },
+    worstSLAVendor: {
+      key: 'worst_sla_vendor',
+      title: 'Worst SLA Vendor',
+      value: worstVendor,
+      accent: 'red'
+    },
+    avgTurnaround: {
+      key: 'avg_turnaround',
+      title: 'Avg Turnaround Time',
+      value: `${systemAvgTurnaround.toFixed(1)} hrs`,
+      accent: 'amber'
     }
   };
 
   if (adminRole === ADMIN_ROLES.FINANCE_ADMIN) {
-    return [cards.grossPlatformRevenue, cards.netCommissionEarned, cards.payoutDue, cards.settlementPendingAmount];
+    return [
+      cards.payoutDue,
+      cards.pendingSettlementsCount,
+      cards.settlementsCompleted,
+      cards.netCommissionEarned,
+      cards.failedTransactions,
+      cards.grossPlatformRevenue
+    ];
+  }
+
+  if (adminRole === ADMIN_ROLES.OPERATIONS_ADMIN) {
+    return [
+      cards.ordersPeriod,
+      cards.pendingOrders,
+      cards.pickupDelays,
+      cards.issueCount
+    ];
   }
 
   return [
     cards.activeUsers,
     cards.activeVendors,
     cards.ordersPeriod,
+    cards.revenuePeriod,
     cards.grossPlatformRevenue,
     cards.pendingOrders,
     cards.issueCount,
     cards.avgOrderValue,
     cards.payoutDue,
     cards.settlementPendingAmount,
-    cards.netCommissionEarned
+    cards.netCommissionEarned,
+    cards.settlementsCompleted,
+    cards.failedTransactions,
+    cards.customerRetention,
+    cards.repeatOrderRate,
+    cards.topVendor,
+    cards.worstSLAVendor,
+    cards.avgTurnaround
   ];
 }
 
@@ -1490,7 +1612,9 @@ async function getDashboardOverview({
   status = 'all',
   vendor = 'all',
   city = 'all',
-  date = ''
+  date = '',
+  tableStartDate,
+  tableEndDate
 }) {
   const role = adminRole || ADMIN_ROLES.SUPER_ADMIN;
   const range = getPeriodRange(period, startDate, endDate);
@@ -1514,8 +1638,8 @@ async function getDashboardOverview({
   const approvals = buildApprovals(context.users);
   const monthOrders = orderRows.filter((order) => isWithinRange(order.createdAt, getPeriodRange('this_month')));
 
-  const filteredOrders = filterRows(orderRows, { range, search, status, vendor, city, date });
-  const filteredSettlements = filterRows(settlementRows, { range, search, status, vendor, city, date });
+  const filteredOrders = filterRows(orderRows, { range, search, status, vendor, city, tableStartDate, tableEndDate });
+  const filteredSettlements = filterRows(settlementRows, { range, search, status, vendor, city, tableStartDate, tableEndDate });
   
   // Calculate Growth for Revenue
   const prevRange = getPreviousPeriodRange(period, range.start);

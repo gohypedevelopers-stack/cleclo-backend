@@ -1378,6 +1378,14 @@ function buildKpiCards(adminRole, filteredOrders, filteredSettlements, filteredI
   }));
   const topVendor = vendorPerformance.sort((a,b) => b.revenue - a.revenue)[0]?.name || 'N/A';
   const worstVendor = vendorPerformance.sort((a,b) => b.issueRate - a.issueRate)[0]?.name || 'N/A';
+  const totalIssuesCount = filteredIssues.length;
+  const damageIssuesCount = filteredIssues.filter(i => 
+    (i.issueType || i.type || i.summary || '').toLowerCase().includes('damage')
+  ).length;
+  const orderDenominator = monthOrders.length || 1;
+  const avgIssueRateGlobal = (totalIssuesCount / orderDenominator) * 100;
+  const avgDamageRateGlobal = (damageIssuesCount / orderDenominator) * 100;
+
   const systemAvgTurnaround = vendorPerformance.filter(v => v.avgTurnaround > 0).reduce((sum, v) => sum + v.avgTurnaround, 0) / (vendorPerformance.filter(v => v.avgTurnaround > 0).length || 1);
 
 
@@ -1421,6 +1429,13 @@ function buildKpiCards(adminRole, filteredOrders, filteredSettlements, filteredI
       key: 'issue_reported_count',
       title: 'Issue Reported Count',
       value: filteredIssues.filter((issue) => issue.status !== 'Resolved').length,
+      accent: 'red'
+    },
+    qualityIntelligence: {
+      key: 'quality_intelligence',
+      title: 'Global Quality Control',
+      value: `${avgIssueRateGlobal.toFixed(1)}%`,
+      note: `Issue Rate: ${avgIssueRateGlobal.toFixed(1)}% | Damage Rate: ${avgDamageRateGlobal.toFixed(1)}%`,
       accent: 'red'
     },
     avgOrderValue: {
@@ -1497,7 +1512,7 @@ function buildKpiCards(adminRole, filteredOrders, filteredSettlements, filteredI
     },
     worstSLAVendor: {
       key: 'worst_sla_vendor',
-      title: 'Worst SLA Vendor',
+      title: 'Low Fulfilment Partner',
       value: worstVendor,
       accent: 'red'
     },
@@ -1537,6 +1552,7 @@ function buildKpiCards(adminRole, filteredOrders, filteredSettlements, filteredI
     cards.grossPlatformRevenue,
     cards.pendingOrders,
     cards.issueCount,
+    cards.qualityIntelligence,
     cards.avgOrderValue,
     cards.payoutDue,
     cards.settlementPendingAmount,
@@ -1645,6 +1661,15 @@ async function getDashboardOverview({
   const approvals = buildApprovals(context.users);
   const monthOrders = orderRows.filter((order) => isWithinRange(order.createdAt, getPeriodRange('this_month')));
 
+  // Calculate Wallet Liability (BI/Finance Oversight)
+  const totalCustomerWalletBalance = context.users
+    .filter(u => u.role === 'customer' && u.wallet)
+    .reduce((sum, u) => sum + Number(u.wallet.balance || 0), 0);
+  
+  const totalVendorPayoutDue = settlementRows
+    .filter((s) => s.status === 'Pending' || s.status === 'Processing')
+    .reduce((sum, s) => sum + s.amount, 0);
+
   const filteredOrders = filterRows(orderRows, { range, search, status, vendor, city, tableStartDate, tableEndDate });
   const filteredSettlements = filterRows(settlementRows, { range, search, status, vendor, city, tableStartDate, tableEndDate });
   
@@ -1749,6 +1774,10 @@ async function getDashboardOverview({
       pendingApprovals: approvals.length,
       openIssues: issueRecords.filter((issue) => issue.status !== 'Resolved').length,
       unreadIssues: issueRecords.filter((issue) => issue.unread).length
+    },
+    walletLiability: {
+      totalCustomerWalletBalance,
+      totalVendorPayoutDue
     }
   };
 }

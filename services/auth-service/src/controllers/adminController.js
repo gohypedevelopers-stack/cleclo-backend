@@ -421,7 +421,7 @@ const getAllVendors = async (req, res) => {
 
         const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
         
-        const [analytics, monthlyStats, pendingCount, approvedThisMonth, rejectedThisMonth, allApproved] = await Promise.all([
+        const results = await Promise.all([
             prisma.vendorProfile.findMany({
                 select: {
                     userId: true,
@@ -451,6 +451,14 @@ const getAllVendors = async (req, res) => {
                     createdAt: { gte: monthStart }
                 }
             }),
+            prisma.adminIssueAlert.groupBy({
+                by: ['vendorId'],
+                _count: { _all: true },
+                where: { 
+                    issueType: { contains: 'damage', mode: 'insensitive' },
+                    vendorId: { not: null }
+                }
+            }),
             prisma.user.count({ 
                 where: { 
                     role: 'vendor', 
@@ -474,6 +482,8 @@ const getAllVendors = async (req, res) => {
                 select: { approvedAt: true, user: { select: { createdAt: true } } }
             })
         ]);
+        
+        const [analytics, monthlyStats, damageStats, pendingCount, approvedThisMonth, rejectedThisMonth, allApproved] = results;
 
         let avgApprovalTime = 0;
         if (allApproved.length > 0) {
@@ -488,11 +498,14 @@ const getAllVendors = async (req, res) => {
             const mStats = monthlyStats.find(m => m.vendorId === v.id);
             
             if (v.vendorProfile) {
+                const damageCount = damageStats.find(d => d.vendorId === v.id)?._count?._all || 0;
+                const totalOrders = stats?.totalOrders || 1;
                 v.vendorProfile = { 
                     ...v.vendorProfile, 
                     ...(stats || {}),
                     revenueThisMonth: mStats?._sum?.grossAmount || 0,
-                    ordersThisMonth: mStats?._sum?.orderCount || 0
+                    ordersThisMonth: mStats?._sum?.orderCount || 0,
+                    damageRate: totalOrders > 0 ? ((damageCount / totalOrders) * 100).toFixed(1) : "0.0"
                 };
             }
             return v;
@@ -676,20 +689,39 @@ const getDashboardStats = async (req, res) => {
             include: { user: { select: { name: true, image: true } } }
         });
 
-        // Get order counts for top vendors from settlements
+        // Get order counts and quality metrics for top vendors
         const topVendors = await Promise.all(topVendorsProfiles.map(async (p) => {
-            const orders = await prisma.vendorSettlement.aggregate({
-                where: { vendorId: p.userId },
-                _sum: { orderCount: true }
-            });
+            const [orders, issueCount, damageCount] = await Promise.all([
+                prisma.vendorSettlement.aggregate({
+                    where: { vendorId: p.userId },
+                    _sum: { orderCount: true }
+                }),
+                prisma.adminIssueAlert.count({
+                    where: { vendorId: p.userId }
+                }),
+                prisma.adminIssueAlert.count({
+                    where: { 
+                        vendorId: p.userId, 
+                        issueType: { contains: 'damage', mode: 'insensitive' } 
+                    }
+                })
+            ]);
+
+            const totalOrders = orders._sum.orderCount || 0;
+
             return {
                 id: p.userId,
                 name: p.businessName || p.user.name,
                 image: p.user.image,
                 revenue: p.totalRevenue,
-                orders: orders._sum.orderCount || 0,
+                orders: totalOrders,
                 sla: p.slaScore,
-                rating: p.rating
+                rating: p.rating,
+                commission: p.commissionEarned,
+                payoutPending: p.payoutPending,
+                avgOrderValue: totalOrders > 0 ? (Number(p.totalRevenue) / totalOrders) : 0,
+                issueRate: totalOrders > 0 ? ((issueCount / totalOrders) * 100).toFixed(1) : "0.0",
+                damageRate: totalOrders > 0 ? ((damageCount / totalOrders) * 100).toFixed(1) : "0.0"
             };
         }));
 
@@ -796,7 +828,8 @@ const getDashboardStats = async (req, res) => {
             _sum: {
                 totalRevenue: true,
                 commissionEarned: true,
-                payoutPending: true
+                payoutPending: true,
+                totalOrders: true
             },
             _avg: {
                 slaScore: true,
@@ -804,6 +837,23 @@ const getDashboardStats = async (req, res) => {
                 issueRate: true
             }
         });
+
+        // Global Financial Liability Summary (Source of Truth for Oversight)
+        const walletAgg = await prisma.wallet.aggregate({ _sum: { balance: true } });
+        const financialSummary = {
+            totalCustomerWalletBalance: Number(walletAgg._sum.balance) || 0,
+            totalVendorPayoutDue: Number(analytics._sum.payoutPending) || 0,
+            totalGlobalRevenue: Number(analytics._sum.totalRevenue) || 0,
+            totalGlobalCommission: Number(analytics._sum.commissionEarned) || 0
+        };
+
+        // Global Damage Rate calculation
+        const damageIssuesTotal = await prisma.adminIssueAlert.count({
+            where: { issueType: { contains: 'damage', mode: 'insensitive' } }
+        });
+        const globalDamageRate = analytics._sum.totalOrders > 0 
+            ? (damageIssuesTotal / analytics._sum.totalOrders) * 100 
+            : 0;
 
         res.json({
             totalUsers,
@@ -825,8 +875,11 @@ const getDashboardStats = async (req, res) => {
             avgSla: analytics._avg.slaScore || 0,
             avgRating: analytics._avg.rating || 0,
             avgIssueRate: analytics._avg.issueRate || 0,
+            avgDamageRate: globalDamageRate,
+            avgOrderValue: analytics._sum.totalOrders > 0 ? (analytics._sum.totalRevenue / analytics._sum.totalOrders) : 0,
             topVendors,
-            growthData
+            growthData,
+            financialSummary
         });
     } catch (error) {
         console.error('[AdminStats Error]:', error);

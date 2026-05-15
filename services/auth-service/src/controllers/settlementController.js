@@ -362,7 +362,13 @@ async function getSettlementStats(req, res) {
             stats.commissionsEarned += Number(settlement.commissionAmount || 0);
         });
 
-        res.json(stats);
+        const walletAgg = await prisma.wallet.aggregate({ _sum: { balance: true } });
+        const totalCustomerWalletBalance = Number(walletAgg._sum.balance) || 0;
+
+        res.json({
+            ...stats,
+            totalCustomerWalletBalance
+        });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }

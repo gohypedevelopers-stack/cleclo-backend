@@ -96,6 +96,7 @@ const updateRewardRule = async (req, res) => {
 
 const deleteRewardRule = async (req, res) => {
     try {
+        const { id } = req.params;
         await prisma.walletRewardRule.delete({
             where: { id }
         });

@@ -203,6 +203,21 @@ const deleteCampaign = async (req, res) => {
     }
 };
 
+const getActiveCampaign = async (req, res) => {
+    try {
+        const campaign = await prisma.referralCampaign.findFirst({
+            where: { isActive: true },
+            orderBy: { createdAt: 'desc' }
+        });
+        if (!campaign) {
+            return res.status(404).json({ error: 'No active referral campaign' });
+        }
+        res.json(campaign);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
 module.exports = {
-    getAllCampaigns, createCampaign, updateCampaign, deleteCampaign
+    getAllCampaigns, createCampaign, updateCampaign, deleteCampaign, getActiveCampaign
 };

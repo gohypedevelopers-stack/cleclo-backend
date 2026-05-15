@@ -8,6 +8,28 @@ function normalizeSettlementStatus(status) {
     return 'pending';
 }
 
+/**
+ * Internal logic for Vendor Tiering & Badging
+ * Gold Vendor → SLA > 95%, Rating > 4.7
+ * Silver Vendor → SLA 85–95%
+ * Probation → SLA < 80%
+ */
+function calculateVendorTier(sla, rating) {
+    const slaScore = Number(sla) || 0;
+    const ratingScore = Number(rating) || 0;
+
+    if (slaScore > 95 && ratingScore > 4.7) {
+        return { tier: 'GOLD', label: 'Gold', badge: '🥇 Gold', color: 'bg-amber-100 text-amber-700' };
+    }
+    if (slaScore >= 85 && slaScore <= 95) {
+        return { tier: 'SILVER', label: 'Silver', badge: '🥈 Silver', color: 'bg-slate-100 text-slate-700' };
+    }
+    if (slaScore < 80) {
+        return { tier: 'PROBATION', label: 'Probation', badge: '⚠️ Probation', color: 'bg-red-100 text-red-700' };
+    }
+    return { tier: 'STANDARD', label: 'Standard', badge: 'Standard', color: 'bg-blue-100 text-blue-700' };
+}
+
 // ============================================
 // USER MANAGEMENT
 // ============================================
@@ -438,7 +460,8 @@ const getAllVendors = async (req, res) => {
                     cluster: true,
                     dailyCapacity: true,
                     currentLoad: true,
-                    commissionRate: true
+                    commissionRate: true,
+                    areaCoverage: true
                 }
             }),
             prisma.vendorSettlement.groupBy({
@@ -505,7 +528,8 @@ const getAllVendors = async (req, res) => {
                     ...(stats || {}),
                     revenueThisMonth: mStats?._sum?.grossAmount || 0,
                     ordersThisMonth: mStats?._sum?.orderCount || 0,
-                    damageRate: totalOrders > 0 ? ((damageCount / totalOrders) * 100).toFixed(1) : "0.0"
+                    damageRate: totalOrders > 0 ? ((damageCount / totalOrders) * 100).toFixed(1) : "0.0",
+                    performanceTier: calculateVendorTier(v.vendorProfile?.slaScore || stats?.slaScore, v.vendorProfile?.rating || stats?.rating)
                 };
             }
             return v;
@@ -721,7 +745,11 @@ const getDashboardStats = async (req, res) => {
                 payoutPending: p.payoutPending,
                 avgOrderValue: totalOrders > 0 ? (Number(p.totalRevenue) / totalOrders) : 0,
                 issueRate: totalOrders > 0 ? ((issueCount / totalOrders) * 100).toFixed(1) : "0.0",
-                damageRate: totalOrders > 0 ? ((damageCount / totalOrders) * 100).toFixed(1) : "0.0"
+                damageRate: totalOrders > 0 ? ((damageCount / totalOrders) * 100).toFixed(1) : "0.0",
+                performanceTier: calculateVendorTier(p.slaScore, p.rating),
+                dailyCapacity: p.dailyCapacity,
+                currentLoad: p.currentLoad,
+                areaCoverage: p.areaCoverage
             };
         }));
 

@@ -138,8 +138,22 @@ const getAllUsers = async (req, res) => {
             };
         });
 
+        // Calculate Global Financial Summary (Source of Truth for Oversight)
+        const walletAgg = await prisma.wallet.aggregate({ _sum: { balance: true } });
+        const vendorAgg = await prisma.vendorProfile.aggregate({ 
+            _sum: { payoutPending: true, totalRevenue: true, commissionEarned: true } 
+        });
+
+        const financialSummary = {
+            totalCustomerWalletBalance: Number(walletAgg._sum.balance) || 0,
+            totalVendorPayoutDue: Number(vendorAgg._sum.payoutPending) || 0,
+            totalGlobalRevenue: Number(vendorAgg._sum.totalRevenue) || 0,
+            totalGlobalCommission: Number(vendorAgg._sum.commissionEarned) || 0
+        };
+
         res.json({
             users: enrichedUsers,
+            financialSummary,
             pagination: {
                 total,
                 page: parseInt(page),

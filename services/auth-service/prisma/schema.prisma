@@ -22,6 +22,7 @@ model User {
   loyaltyPoints       Int                  @default(0)
   loyaltyTier         String               @default("Silver")
   isVerified          Boolean              @default(false)
+  registrationSource  String?              @default("organic")
   lastAdminLoginAt    DateTime?
   createdAt           DateTime             @default(now())
   updatedAt           DateTime             @updatedAt

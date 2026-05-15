@@ -81,6 +81,7 @@ async function seed() {
           email: c.email, 
           phone: c.phone, 
           role: "customer", 
+          registrationSource: c.name === "Priya Sharma" ? "referral" : "organic",
           password: "Password123!",
           wallet: { create: { balance: 1000 } }
         }

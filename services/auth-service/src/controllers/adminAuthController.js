@@ -537,6 +537,7 @@ async function verifyAdminOtp(req, res) {
         const token = jwt.sign(
             {
                 userId: adminUser.id,
+                name: adminUser.name,
                 role: adminUser.role,
                 adminRole: adminUser.adminRole || otpChallenge.requestedRole
             },

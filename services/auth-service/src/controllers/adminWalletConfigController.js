@@ -1,5 +1,22 @@
 const prisma = require('../utils/prisma');
 
+function adminMetadata(req, mode = 'update') {
+    const name = req.admin?.name || req.admin?.adminRole || 'System Admin';
+    if (mode === 'create') {
+        return {
+            createdByAdminId: req.admin?.userId,
+            createdByAdminName: name,
+            updatedByAdminId: req.admin?.userId,
+            updatedByAdminName: name
+        };
+    }
+
+    return {
+        updatedByAdminId: req.admin?.userId,
+        updatedByAdminName: name
+    };
+}
+
 // ============================================
 // WALLET PLATFORM CONFIG
 // ============================================
@@ -32,8 +49,10 @@ const updatePlatformConfig = async (req, res) => {
                 data: { 
                     minAddAmount, 
                     maxAddAmount, 
+                    minAddAmount, 
+                    maxAddAmount, 
                     bonusEnabled, 
-                    updatedByAdminId: req.admin?.userId 
+                    ...adminMetadata(req) 
                 }
             });
         } else {
@@ -43,7 +62,7 @@ const updatePlatformConfig = async (req, res) => {
                     minAddAmount, 
                     maxAddAmount, 
                     bonusEnabled, 
-                    updatedByAdminId: req.admin?.userId 
+                    ...adminMetadata(req) 
                 }
             });
         }
@@ -73,7 +92,7 @@ const createRewardRule = async (req, res) => {
     try {
         const payload = req.body;
         const rule = await prisma.walletRewardRule.create({
-            data: { ...payload, createdByAdminId: req.admin?.userId }
+            data: { ...payload, ...adminMetadata(req, 'create') }
         });
         res.status(201).json(rule);
     } catch (error) {
@@ -86,7 +105,7 @@ const updateRewardRule = async (req, res) => {
         const { id } = req.params;
         const rule = await prisma.walletRewardRule.update({
             where: { id },
-            data: { ...req.body, updatedByAdminId: req.admin?.userId }
+            data: { ...req.body, ...adminMetadata(req) }
         });
         res.json(rule);
     } catch (error) {

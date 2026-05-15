@@ -82,26 +82,59 @@ const getAllUsers = async (req, res) => {
 
             const userTickets = allTickets.filter(t => t.userId === user.id);
 
-            // TEST OVERRIDE: Forcing values to see if they appear in the UI
-            const totalOrders = (userOrders.length || 0) + 5;
-            const totalSpent = (userOrders.reduce((sum, o) => sum + (Number(o.totalAmount) || 0), 0) || 0) + 500;
+            // Analytical Metrics
+            const totalOrders = userOrders.length || 0;
+            const totalSpent = userOrders.reduce((sum, o) => sum + (Number(o.totalAmount) || 0), 0) || 0;
             
             const avgOrderValue = totalOrders > 0 ? totalSpent / totalOrders : 0;
             const lastOrderDate = userOrders.length > 0 
                 ? userOrders.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0].createdAt 
                 : null;
-            const refundCount = userOrders.filter(o => o.paymentStatus === 'refunded').length;
+            const refundCount = userOrders.filter(o => o.paymentStatus === 'refunded' || o.status === 'refunded').length;
             const complaintCount = userTickets.length;
+
+            // Specialized Rider Profile Intelligence
+            let riderProfile = null;
+            if (user.role === 'rider') {
+                const deliveredOrders = userOrders.filter(o => o.status === 'delivered');
+                const onTimeOrders = userOrders.filter(o => o.isOnTime === true);
+                
+                // Heuristic for assigned vendor (most frequent vendor in their order history)
+                const vendorMap = {};
+                userOrders.forEach(o => {
+                    if (o.vendorName) vendorMap[o.vendorName] = (vendorMap[o.vendorName] || 0) + 1;
+                });
+                const assignedVendorName = Object.entries(vendorMap).sort((a, b) => b[1] - a[1])[0]?.[0] || "Unassigned";
+
+                riderProfile = {
+                    deliveriesCompleted: deliveredOrders.length,
+                    avgPickupDelay: userOrders.reduce((sum, o) => sum + (o.pickupDelay || 0), 0) / (totalOrders || 1),
+                    onTimePercent: totalOrders > 0 ? (onTimeOrders.length / totalOrders) * 100 : 0,
+                    assignedVendorName
+                };
+            }
+
+            // Dynamic Risk Indicators (Source of Truth)
+            const riskIndicators = {
+                isHighRefund: user.role === 'customer' && (refundCount >= 2 || (totalOrders > 5 && (refundCount / totalOrders) > 0.15)),
+                isHighComplaints: user.role === 'customer' && complaintCount >= 3,
+                isSLABreach: user.role === 'vendor' && (user.vendorProfile?.slaScore < 80),
+                isHighIssueRate: user.role === 'vendor' && (user.vendorProfile?.issueRate > 5),
+                isFrequentDelay: user.role === 'rider' && (riderProfile?.avgPickupDelay > 8),
+                isLowOnTime: user.role === 'rider' && (riderProfile?.onTimePercent < 80)
+            };
 
             return {
                 ...user,
-                name: `[LIVE] ${user.name}`,
+                name: user.name,
                 totalOrders,
                 totalSpent,
                 avgOrderValue,
                 lastOrderDate,
                 refundCount,
-                complaintCount
+                complaintCount,
+                riderProfile: riderProfile || user.riderProfile,
+                riskIndicators
             };
         });
 

@@ -42,7 +42,8 @@ router.post('/items/bulk-price-update', adminCatalogController.bulkPriceUpdate);
 router.post('/items/price-preview', adminCatalogController.pricePreview);
 router.get('/items/price-overrides', adminCatalogController.getItemPriceOverrides);
 router.post('/items/price-overrides', adminCatalogController.saveItemPriceOverrides);
-
-
+// Availability Rules
+router.get('/availability-rules', adminCatalogController.getAvailabilityRules);
+router.post('/availability-rules', adminCatalogController.saveAvailabilityRules);
 
 module.exports = router;

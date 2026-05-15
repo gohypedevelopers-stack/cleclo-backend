@@ -1,5 +1,22 @@
 const prisma = require('../utils/prisma');
 
+function adminMetadata(req, mode = 'update') {
+    const name = req.admin?.name || req.admin?.adminRole || 'System Admin';
+    if (mode === 'create') {
+        return {
+            createdByAdminId: req.admin?.userId,
+            createdByAdminName: name,
+            updatedByAdminId: req.admin?.userId,
+            updatedByAdminName: name
+        };
+    }
+
+    return {
+        updatedByAdminId: req.admin?.userId,
+        updatedByAdminName: name
+    };
+}
+
 const toNumber = (value, fallback = 0) => {
     if (value === undefined || value === null || value === '') return fallback;
     const parsed = Number(value);
@@ -109,7 +126,7 @@ const buildCampaignCreateData = (payload, fallbackCampaign, adminId) => {
         isActive: payload.isActive ?? source.isActive ?? true,
         startAt: toOptionalDate(payload.startAt, source.startAt ?? null),
         endAt: toOptionalDate(payload.endAt, source.endAt ?? null),
-        createdByAdminId: adminId,
+        ...adminMetadata(req, fallbackCampaign ? 'update' : 'create')
     };
 };
 
@@ -130,7 +147,7 @@ const createCampaign = async (req, res) => {
     try {
         const payload = req.body || {};
         const campaign = await prisma.referralCampaign.create({
-            data: buildCampaignCreateData(payload, null, req.admin?.userId)
+            data: buildCampaignCreateData(payload, null, req)
         });
 
         const statsMap = await buildUsageStatsMap([campaign.id]);
@@ -159,7 +176,7 @@ const updateCampaign = async (req, res) => {
         const newVersionData = buildCampaignCreateData(
             payload,
             existingCampaign,
-            req.admin?.userId
+            req
         );
 
         // Requirement: every settings update should create a new referral ID.
@@ -168,7 +185,7 @@ const updateCampaign = async (req, res) => {
                 where: { id },
                 data: {
                     isActive: false,
-                    updatedByAdminId: req.admin?.userId,
+                    ...adminMetadata(req),
                     endAt: existingCampaign.endAt || new Date(),
                 },
             }),

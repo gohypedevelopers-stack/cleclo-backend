@@ -708,6 +708,67 @@ const saveItemPriceOverrides = async (req, res) => {
     }
 };
 
+const getAvailabilityRules = async (req, res) => {
+    try {
+        const { entityType, entityId, cityCode } = req.query;
+        const where = {};
+        if (entityType) where.entityType = entityType;
+        if (entityId) where.entityId = entityId;
+        if (cityCode) where.cityCode = cityCode;
+
+        const rules = await prisma.catalogAvailabilityRule.findMany({ where });
+        res.json(rules);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+const saveAvailabilityRules = async (req, res) => {
+    try {
+        const { rules } = req.body;
+        if (!Array.isArray(rules)) return res.status(400).json({ error: 'Rules array required' });
+
+        const results = await Promise.all(
+            rules.map(async (r) => {
+                const data = {
+                    entityType: r.entityType,
+                    entityId: r.entityId,
+                    cityCode: r.cityCode || null,
+                    vendorId: r.vendorId || null,
+                    isVisible: r.isVisible !== undefined ? r.isVisible : true,
+                    ...adminMetadata(req)
+                };
+
+                const existing = await prisma.catalogAvailabilityRule.findFirst({
+                    where: {
+                        entityType: r.entityType,
+                        entityId: r.entityId,
+                        cityCode: r.cityCode || null,
+                        vendorId: r.vendorId || null
+                    }
+                });
+
+                if (existing) {
+                    return prisma.catalogAvailabilityRule.update({
+                        where: { id: existing.id },
+                        data
+                    });
+                } else {
+                    return prisma.catalogAvailabilityRule.create({
+                        data: {
+                            ...data,
+                            ...adminMetadata(req, 'create')
+                        }
+                    });
+                }
+            })
+        );
+        res.json({ count: results.length, rules: results });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
 module.exports = {
     getAllServices,
     createService,
@@ -734,5 +795,7 @@ module.exports = {
     bulkPriceUpdate,
     pricePreview,
     getItemPriceOverrides,
-    saveItemPriceOverrides
+    saveItemPriceOverrides,
+    getAvailabilityRules,
+    saveAvailabilityRules
 };

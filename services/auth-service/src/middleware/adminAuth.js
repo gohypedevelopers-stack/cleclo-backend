@@ -30,6 +30,7 @@ function authenticateAdmin(req, res, next) {
 
         req.admin = {
             userId: decoded.userId,
+            name: decoded.name,
             role: decoded.role,
             adminRole: decoded.adminRole || ADMIN_ROLES.SUPER_ADMIN
         };

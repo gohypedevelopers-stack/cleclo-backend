@@ -1,21 +1,42 @@
 const nodemailer = require('nodemailer');
 
-// Mock email service for development if SMTP not configured
-// In production, configure environment variables: SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS
+// SMTP Configuration from environment variables
+const SMTP_HOST = process.env.SMTP_HOST;
+const SMTP_PORT = parseInt(process.env.SMTP_PORT || '465');
+const SMTP_USER = process.env.SMTP_USER;
+const SMTP_PASS = process.env.SMTP_PASS;
+
 const transporter = nodemailer.createTransport({
-    host: 'smtp.gmail.com', // Assuming Gmail or common SMTP host for this domain
-    port: 465,
-    secure: true,
+    host: SMTP_HOST,
+    port: SMTP_PORT,
+    secure: SMTP_PORT === 465,
     auth: {
-        user: 'priyaleadnius@gohypemedia.com',
-        pass: 'Leadgen@2026'
+        user: SMTP_USER,
+        pass: SMTP_PASS
+    }
+});
+
+if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS) {
+    console.error('[EMAIL_CONFIG_ERROR] Missing SMTP configuration in .env file. Email alerts will not be sent.');
+}
+
+// Verify connection configuration
+transporter.verify(function(error, success) {
+    if (error) {
+        if (error.responseCode === 535) {
+            console.warn(`[EMAIL_CONFIG_WARNING] SMTP Authentication failed (535) for ${SMTP_HOST}. Please verify your credentials.`);
+        } else {
+            console.error(`[EMAIL_CONFIG_ERROR] SMTP Connection failed for ${SMTP_HOST}:`, error.message);
+        }
+    } else {
+        console.log(`[EMAIL_SERVICE] Connected to ${SMTP_HOST} - Server is ready`);
     }
 });
 
 async function sendLoginAlertEmail(toEmail, alertMessage, ipAddress, location) {
     try {
         const mailOptions = {
-            from: '"Cleclo Security" <priyaleadnius@gohypemedia.com>',
+            from: `"Cleclo Security" <${SMTP_USER}>`,
             to: toEmail,
             subject: 'Security Alert: New Login Detected',
             html: `

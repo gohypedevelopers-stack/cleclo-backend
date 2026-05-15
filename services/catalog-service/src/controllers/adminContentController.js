@@ -67,7 +67,7 @@ function normalizeBannerPayload(payload, existing = {}) {
 const getAllBanners = async (req, res) => {
     try {
         const banners = await prisma.homeBanner.findMany({
-            orderBy: { priorityRank: 'desc' }
+            orderBy: { priorityRank: 'asc' }
         });
         res.json(banners);
     } catch (error) {
@@ -199,7 +199,7 @@ const deleteVideo = async (req, res) => {
 const getAllCampaigns = async (req, res) => {
     try {
         const campaigns = await prisma.campaign.findMany({
-            orderBy: { priorityRank: 'desc' }
+            orderBy: { priorityRank: 'asc' }
         });
         res.json(campaigns);
     } catch (error) {

@@ -1963,7 +1963,7 @@ async function updateIssue(issueId, payload = {}) {
 
   if (shouldMoveTicketToInProgress) {
     await prisma.supportTicket
-      .update({
+      .updateMany({
         where: { id: currentIssue.supportTicketId },
         data: {
           status: 'in_progress',
@@ -1973,25 +1973,25 @@ async function updateIssue(issueId, payload = {}) {
               : getIssueStatusValue(currentIssue.status) === ISSUE_ALERT_STATUSES.ESCALATED
         }
       })
-      .catch(() => null);
+      .catch((err) => console.error('Failed to update ticket status:', err.message));
   }
 
   if (payload.action === 'escalate' && currentIssue.supportTicketId) {
     await prisma.supportTicket
-      .update({
+      .updateMany({
         where: { id: currentIssue.supportTicketId },
         data: {
           isEscalated: true,
           status: 'in_progress'
         }
       })
-      .catch(() => null);
+      .catch((err) => console.error('Failed to escalate ticket:', err.message));
   }
 
   if (payload.action === 'resolve') {
     if (currentIssue.supportTicketId) {
       await prisma.supportTicket
-        .update({
+        .updateMany({
           where: { id: currentIssue.supportTicketId },
           data: {
             status: 'resolved',
@@ -1999,7 +1999,7 @@ async function updateIssue(issueId, payload = {}) {
             resolvedAt: new Date()
           }
         })
-        .catch(() => null);
+        .catch((err) => console.error('Failed to resolve ticket:', err.message));
     }
 
     if (currentIssue.orderId) {

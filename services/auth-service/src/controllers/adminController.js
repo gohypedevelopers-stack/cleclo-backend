@@ -418,6 +418,10 @@ const getVendorById = async (req, res) => {
             return res.status(404).json({ error: 'Vendor not found' });
         }
 
+        if (vendor.vendorProfile) {
+            vendor.vendorProfile.agreementExpiry = vendor.vendorProfile.agreementExpiry || 
+                (vendor.vendorProfile.agreementSignedAt ? new Date(new Date(vendor.vendorProfile.agreementSignedAt).setFullYear(new Date(vendor.vendorProfile.agreementSignedAt).getFullYear() + 1)) : "2026-12-31");
+        }
         res.json(vendor);
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -458,10 +462,10 @@ const getAllVendors = async (req, res) => {
                     city: true,
                     area: true,
                     cluster: true,
-                    dailyCapacity: true,
                     currentLoad: true,
                     commissionRate: true,
-                    areaCoverage: true
+                    areaCoverage: true,
+                    agreementSignedAt: true
                 }
             }),
             prisma.vendorSettlement.groupBy({
@@ -749,7 +753,8 @@ const getDashboardStats = async (req, res) => {
                 performanceTier: calculateVendorTier(p.slaScore, p.rating),
                 dailyCapacity: p.dailyCapacity,
                 currentLoad: p.currentLoad,
-                areaCoverage: p.areaCoverage
+                areaCoverage: p.areaCoverage,
+                agreementExpiry: p.agreementExpiry || (p.agreementSignedAt ? new Date(new Date(p.agreementSignedAt).setFullYear(new Date(p.agreementSignedAt).getFullYear() + 1)) : "2026-12-31")
             };
         }));
 

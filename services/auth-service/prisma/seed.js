@@ -19,6 +19,7 @@ async function main() {
     await prisma.adminAuthChallenge.deleteMany();
     await prisma.paymentMethod.deleteMany();
     await prisma.loyaltyHistory.deleteMany();
+    try { await prisma.riderProfile.deleteMany(); } catch (e) {}
     await prisma.user.deleteMany();
 
     // Hash password for all users
@@ -88,7 +89,7 @@ async function main() {
         { id: '11111111-1111-1111-1111-111111111111', name: 'Ravindra Kumar', email: 'ravindra@example.com', phone: '9876543210', type: 'vip' },
         { id: '22222222-2222-2222-2222-222222222222', name: 'Priya Sharma', email: 'priya@example.com', phone: '9876543211', type: 'regular' },
         { id: '33333333-3333-3333-3333-333333333333', name: 'Amit Patel', email: 'amit@example.com', phone: '9876543212', type: 'top_spender' },
-        { name: 'Sneha Reddy', email: 'sneha@example.com', phone: '9876543213', type: 'regular' },
+        { id: '44444444-4444-4444-4444-444444444445', name: 'Sneha Reddy', email: 'sneha@example.com', phone: '9876543213', type: 'regular' },
     ];
 
     for (const customerData of customerNames) {

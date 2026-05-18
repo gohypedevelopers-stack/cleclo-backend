@@ -96,6 +96,11 @@ router.get(
   adminController.getAllUsers
 );
 router.get(
+  '/riders',
+  authorizeAdminRoles(ADMIN_ROLES.SUPER_ADMIN, ADMIN_ROLES.OPERATIONS_ADMIN),
+  adminController.getAllRiders
+);
+router.get(
   '/users/:id',
   authorizeAdminRoles(ADMIN_ROLES.SUPER_ADMIN, ADMIN_ROLES.OPERATIONS_ADMIN),
   adminController.getUserById

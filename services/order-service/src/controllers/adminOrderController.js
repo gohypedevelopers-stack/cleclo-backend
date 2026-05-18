@@ -156,6 +156,24 @@ const assignRider = async (req, res) => {
         const { id } = req.params;
         const { riderId } = req.body;
 
+        if (!riderId) return res.status(400).json({ error: 'Rider ID is required' });
+
+        // Check rider capacity from Auth Service
+        const riders = await fetchUsersByIds([riderId]);
+        const rider = riders[0];
+
+        if (!rider) return res.status(404).json({ error: 'Rider not found' });
+        if (rider.role !== 'rider') return res.status(400).json({ error: 'User is not a rider' });
+
+        const rp = rider.riderProfile || {};
+        // If overloaded, avoid assigning (Dispatch system safeguard)
+        if (rp.activeOrders >= (rp.maxCapacity || 8)) {
+            return res.status(400).json({ 
+                error: 'Rider Overloaded', 
+                message: `Rider has reached maximum capacity (${rp.maxCapacity || 8} orders). Please assign to another rider.`
+            });
+        }
+
         const order = await prisma.order.update({
             where: { id },
             data: { riderId }

@@ -1057,17 +1057,35 @@ const getDashboardStats = async (req, res) => {
                     createdAt: { lte: m.end } 
                 }
             });
-            const active = await prisma.user.count({
+            const approved = await prisma.user.count({
                 where: { 
                     role: 'vendor', 
                     vendorProfile: { isApproved: true },
                     createdAt: { lte: m.end }
                 }
             });
+            const rejected = await prisma.user.count({
+                where: { 
+                    role: 'vendor', 
+                    status: 'blocked',
+                    createdAt: { lte: m.end }
+                }
+            });
+            const pending = await prisma.user.count({
+                where: { 
+                    role: 'vendor', 
+                    vendorProfile: { isApproved: false },
+                    status: { not: 'blocked' },
+                    createdAt: { lte: m.end }
+                }
+            });
             return {
                 month: m.name,
                 registered,
-                active
+                active: approved,
+                approved,
+                rejected,
+                pending
             };
         }));
 
@@ -1112,6 +1130,7 @@ const getDashboardStats = async (req, res) => {
             rejectedVendors: blockedVendors,
             highRiskVendors: highRiskAlerts.length,
             totalRevenue: analytics._sum.totalRevenue || 0,
+            totalOrders: analytics._sum.totalOrders || 0,
             commissionEarned: analytics._sum.commissionEarned || 0,
             commissionThisMonth: thisMonthVal,
             commissionTrend: commissionTrend,

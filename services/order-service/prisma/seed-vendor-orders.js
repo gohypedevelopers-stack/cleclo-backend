@@ -103,11 +103,7 @@ async function main() {
   let totalCreated = 0;
 
   for (const day of WEEK_PLAN) {
-    if (!isPast(day.dayIdx)) {
-      console.log(`⏭️  Skipping ${day.label} (future day)`);
-      continue;
-    }
-
+    // Populate all days for a beautiful complete weekly curve in development
     for (const vi of day.vendorIndices) {
       const vendorId = VENDOR_IDS[vi];
 

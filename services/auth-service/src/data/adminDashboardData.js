@@ -1464,8 +1464,9 @@ function buildKpiCards(adminRole, filteredOrders, filteredSettlements, filteredI
     },
     netCommissionEarned: {
       key: 'net_commission_earned',
-      title: 'Net Commission Earned',
-      value: formatCurrency(selectedCommission),
+      title: 'Commission Earned (This Month)',
+      value: formatCurrency(growthStats?.thisMonthCommission || 0),
+      note: `${(growthStats?.commissionGrowth || 0) >= 0 ? '+' : ''}${Math.round(growthStats?.commissionGrowth || 0)}% vs last month`,
       accent: 'blue'
     },
     settlementsCompleted: {
@@ -1691,6 +1692,34 @@ async function getDashboardOverview({
     }
   }
 
+  const now = new Date();
+  const thisMonthRange = {
+    start: new Date(now.getFullYear(), now.getMonth(), 1),
+    end: new Date(now.getFullYear(), now.getMonth() + 1, 1)
+  };
+  const lastMonthRange = {
+    start: new Date(now.getFullYear(), now.getMonth() - 1, 1),
+    end: new Date(now.getFullYear(), now.getMonth(), 1)
+  };
+
+  const thisMonthCommission = orderRows
+    .filter(o => isWithinRange(o.createdAt, thisMonthRange) && o.paymentStatus === 'Paid')
+    .reduce((sum, o) => sum + Number(o.commissionAmount || 0), 0);
+
+  const lastMonthCommission = orderRows
+    .filter(o => isWithinRange(o.createdAt, lastMonthRange) && o.paymentStatus === 'Paid')
+    .reduce((sum, o) => sum + Number(o.commissionAmount || 0), 0);
+
+  let commissionGrowth = 0;
+  if (lastMonthCommission > 0) {
+    commissionGrowth = ((thisMonthCommission - lastMonthCommission) / lastMonthCommission) * 100;
+  } else if (thisMonthCommission > 0) {
+    commissionGrowth = 100;
+  }
+
+  growthStats.thisMonthCommission = thisMonthCommission;
+  growthStats.commissionGrowth = commissionGrowth;
+
   const filteredIssues = issueRecords.filter((issue) => {
     return (
       isWithinRange(issue.createdAt, range) &&
@@ -1723,6 +1752,7 @@ async function getDashboardOverview({
     subtitle: roleConfig.subtitle,
     period,
     periodLabel,
+    settlements: filteredSettlements,
     filters: {
       timeRangeOptions: [
         { value: 'today', label: 'Today' },

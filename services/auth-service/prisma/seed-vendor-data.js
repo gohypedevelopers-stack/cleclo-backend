@@ -46,6 +46,13 @@ function daysAgo(n, hour = 10) {
   return d;
 }
 
+function daysFromNow(n, hour = 10) {
+  const d = new Date();
+  d.setDate(d.getDate() + n);
+  d.setHours(hour, 0, 0, 0);
+  return d;
+}
+
 function rand(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
@@ -86,6 +93,7 @@ async function main() {
       commissionRate: 19, dailyCapacity: 200, isApproved: true, bankVerified: true,
       gstRegistered: true, gstNumber: 'GST27PREMWASH001',
       ownerName: 'Rahul Malhotra', lat: 19.0596, lng: 72.8295,
+      metrics: { revenue: 720000, commission: 136800, payout: 12500, sla: 97, rating: 4.8, issue: 1.1, orders: 642, load: 118, refund: 1800 },
     },
     {
       id: VENDOR_IDS.quickClean,
@@ -94,6 +102,8 @@ async function main() {
       commissionRate: 22, dailyCapacity: 150, isApproved: true, bankVerified: true,
       gstRegistered: true, gstNumber: 'GST27QKCLEAN002',
       ownerName: 'Suresh Pillai', lat: 19.1136, lng: 72.8697,
+      isMaintenance: true, reopenDate: daysFromNow(5),
+      metrics: { revenue: 430000, commission: 94600, payout: 7800, sla: 83, rating: 3.9, issue: 5.8, orders: 355, load: 48, refund: 5200 },
     },
     {
       id: VENDOR_IDS.freshLaundry,
@@ -102,6 +112,7 @@ async function main() {
       commissionRate: 15, dailyCapacity: 180, isApproved: true, bankVerified: true,
       gstRegistered: true, gstNumber: 'GST27FRESHL003',
       ownerName: 'Amita Joshi', lat: 18.5362, lng: 73.8947,
+      metrics: { revenue: 510000, commission: 76500, payout: 5400, sla: 91, rating: 4.5, issue: 2.6, orders: 428, load: 96, refund: 2600 },
     },
     {
       id: VENDOR_IDS.sparkleWash,
@@ -110,6 +121,7 @@ async function main() {
       commissionRate: 20, dailyCapacity: 120, isApproved: true, bankVerified: false,
       gstRegistered: false, gstNumber: null,
       ownerName: 'Vijay Kumar', lat: 12.9716, lng: 77.6099,
+      metrics: { revenue: 210000, commission: 42000, payout: 9200, sla: 74, rating: 3.4, issue: 9.7, orders: 174, load: 104, refund: 8600 },
     },
     {
       id: VENDOR_IDS.cleanExpress,
@@ -118,6 +130,7 @@ async function main() {
       commissionRate: 18, dailyCapacity: 160, isApproved: true, bankVerified: true,
       gstRegistered: true, gstNumber: 'GST27CLEXPR005',
       ownerName: 'Neha Kapoor', lat: 28.6315, lng: 77.2167,
+      metrics: { revenue: 580000, commission: 104400, payout: 0, sla: 89, rating: 4.2, issue: 3.4, orders: 506, load: 72, refund: 3100 },
     },
     {
       id: VENDOR_IDS.eliteCleaners,
@@ -126,6 +139,7 @@ async function main() {
       commissionRate: 21, dailyCapacity: 100, isApproved: false, bankVerified: false,
       gstRegistered: false, gstNumber: null,
       ownerName: 'Prakash Reddy', lat: 17.4325, lng: 78.4071,
+      metrics: { revenue: 0, commission: 0, payout: 0, sla: 0, rating: 0, issue: 0, orders: 0, load: 0, refund: 0 },
     },
   ];
 
@@ -136,15 +150,26 @@ async function main() {
       await prisma.vendorProfile.upsert({
         where: { userId: existing.id },
         update: {
-          commissionRate: v.commissionRate, isApproved: v.isApproved, bankVerified: v.bankVerified, gstRegistered: v.gstRegistered,
+          city: v.city,
+          area: v.area,
+          businessType: 'Standard Store',
+          dailyCapacity: v.dailyCapacity,
+          commissionRate: v.commissionRate,
+          isApproved: v.isApproved,
+          bankVerified: v.bankVerified,
+          gstRegistered: v.gstRegistered,
+          isMaintenance: v.isMaintenance || false,
+          reopenDate: v.isMaintenance ? v.reopenDate : null,
           ownerIdProofUrl: v.isApproved ? `http://localhost:3000/test-docs/owner-id-proof.html` : null,
           businessProofUrl: v.isApproved ? `http://localhost:3000/test-docs/business-proof.html` : null,
         },
         create: {
           user: { connect: { id: existing.id } },
-          businessName: v.businessName, commissionRate: v.commissionRate,
+          businessName: v.businessName, city: v.city, area: v.area, businessType: 'Standard Store', commissionRate: v.commissionRate,
           isApproved: v.isApproved, bankVerified: v.bankVerified,
           gstRegistered: v.gstRegistered, dailyCapacity: v.dailyCapacity,
+          isMaintenance: v.isMaintenance || false,
+          reopenDate: v.isMaintenance ? v.reopenDate : null,
           termsAccepted: v.isApproved, slaAccepted: v.isApproved,
           ownerIdProofUrl: v.isApproved ? `http://localhost:3000/test-docs/owner-id-proof.html` : null,
           businessProofUrl: v.isApproved ? `http://localhost:3000/test-docs/business-proof.html` : null,
@@ -152,13 +177,8 @@ async function main() {
       });
       
       // Update raw analytical fields since prisma generate is locked
-      const rev = v.isApproved ? rand(150000, 800000) : 0;
-      const comm = v.isApproved ? rand(20000, 150000) : 0;
-      const payout = v.isApproved ? rand(0, 15000) : 0;
-      const sla = v.isApproved ? rand(75, 99) : 0;
-      const r = v.isApproved ? +(Math.random() * (5 - 3.5) + 3.5).toFixed(1) : 0;
-      const issue = v.isApproved ? +(Math.random() * 8).toFixed(1) : 0;
-      await prisma.$executeRawUnsafe(`UPDATE "VendorProfile" SET "totalRevenue" = ${rev}, "commissionEarned" = ${comm}, "payoutPending" = ${payout}, "slaScore" = ${sla}, "rating" = ${r}, "issueRate" = ${issue} WHERE "userId" = '${existing.id}'`);
+      const metrics = v.metrics || {};
+      await prisma.$executeRawUnsafe(`UPDATE "VendorProfile" SET "totalRevenue" = ${metrics.revenue || 0}, "commissionEarned" = ${metrics.commission || 0}, "payoutPending" = ${metrics.payout || 0}, "slaScore" = ${metrics.sla || 0}, "rating" = ${metrics.rating || 0}, "issueRate" = ${metrics.issue || 0}, "refundAmount" = ${metrics.refund || 0}, "totalOrders" = ${metrics.orders || 0}, "currentLoad" = ${metrics.load || 0} WHERE "userId" = '${existing.id}'`);
 
       v.id = existing.id;
       continue;
@@ -175,9 +195,11 @@ async function main() {
         vendorProfile: {
           create: {
             businessName: v.businessName,
+            city: v.city,
+            area: v.area,
             gstRegistered: v.gstRegistered,
             gstNumber: v.gstNumber,
-            businessType: 'LLP',
+            businessType: 'Standard Store',
             servicesOffered: 'Dry Clean, Wash Only, Iron',
             dailyCapacity: v.dailyCapacity,
             commissionRate: v.commissionRate,
@@ -191,6 +213,8 @@ async function main() {
             termsAccepted: v.isApproved,
             slaAccepted: v.isApproved,
             isApproved: v.isApproved,
+            isMaintenance: v.isMaintenance || false,
+            reopenDate: v.isMaintenance ? v.reopenDate : null,
           }
         },
         outlets: {
@@ -206,13 +230,8 @@ async function main() {
     });
 
     // Update raw analytical fields
-    const rev = v.isApproved ? rand(150000, 800000) : 0;
-    const comm = v.isApproved ? rand(20000, 150000) : 0;
-    const payout = v.isApproved ? rand(0, 15000) : 0;
-    const sla = v.isApproved ? rand(75, 99) : 0;
-    const r = v.isApproved ? +(Math.random() * (5 - 3.5) + 3.5).toFixed(1) : 0;
-    const issue = v.isApproved ? +(Math.random() * 8).toFixed(1) : 0;
-    await prisma.$executeRawUnsafe(`UPDATE "VendorProfile" SET "totalRevenue" = ${rev}, "commissionEarned" = ${comm}, "payoutPending" = ${payout}, "slaScore" = ${sla}, "rating" = ${r}, "issueRate" = ${issue} WHERE "userId" = '${v.id}'`);
+    const metrics = v.metrics || {};
+    await prisma.$executeRawUnsafe(`UPDATE "VendorProfile" SET "totalRevenue" = ${metrics.revenue || 0}, "commissionEarned" = ${metrics.commission || 0}, "payoutPending" = ${metrics.payout || 0}, "slaScore" = ${metrics.sla || 0}, "rating" = ${metrics.rating || 0}, "issueRate" = ${metrics.issue || 0}, "refundAmount" = ${metrics.refund || 0}, "totalOrders" = ${metrics.orders || 0}, "currentLoad" = ${metrics.load || 0} WHERE "userId" = '${v.id}'`);
 
   }
   console.log('✅ Vendors upserted');

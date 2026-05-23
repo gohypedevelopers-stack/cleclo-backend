@@ -1,4 +1,5 @@
 const prisma = require('../utils/prisma');
+const bcrypt = require('bcryptjs');
 
 function normalizeSettlementStatus(status) {
     const normalized = String(status || '').trim().toLowerCase();
@@ -844,6 +845,119 @@ const approveVendor = async (req, res) => {
     }
 };
 
+// Toggle maintenance mode for a vendor outlet. Maintenance blocks new order intake
+// while preserving existing order processing in the order service.
+const setVendorMaintenance = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { isMaintenance, reopenDate } = req.body;
+
+        if (typeof isMaintenance !== 'boolean') {
+            return res.status(400).json({ error: 'isMaintenance must be a boolean' });
+        }
+
+        const vendor = await prisma.user.findFirst({
+            where: { id, role: 'vendor' },
+            include: { vendorProfile: true, outlets: true }
+        });
+
+        if (!vendor || !vendor.vendorProfile) {
+            return res.status(404).json({ error: 'Vendor not found' });
+        }
+
+        let expectedReopenDate = null;
+        if (isMaintenance) {
+            expectedReopenDate = parseReopenDate(reopenDate) || defaultReopenDate();
+        }
+
+        const profile = await prisma.vendorProfile.update({
+            where: { userId: id },
+            data: {
+                isMaintenance,
+                reopenDate: expectedReopenDate
+            }
+        });
+
+        res.json({
+            message: isMaintenance ? 'Maintenance mode enabled' : 'Maintenance mode disabled',
+            vendor: {
+                ...vendor,
+                vendorProfile: profile
+            }
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+// Reject vendor with reason logging for analytics
+const rejectVendor = async (req, res) => {
+    try {
+        const { vendorId } = req.params;
+        const { reason, notes } = req.body;
+
+        const VALID_REASONS = [
+            'Incomplete Documents',
+            'Invalid GST',
+            'Location Not Supported',
+            'Capacity Insufficient'
+        ];
+
+        if (!reason || !VALID_REASONS.includes(reason)) {
+            return res.status(400).json({
+                error: 'Invalid rejection reason',
+                validReasons: VALID_REASONS
+            });
+        }
+
+        const rejectionNote = notes ? `${reason} — ${notes}` : reason;
+
+        const [user, profile] = await prisma.$transaction([
+            prisma.user.update({
+                where: { id: vendorId },
+                data: { status: 'rejected' }
+            }),
+            prisma.vendorProfile.update({
+                where: { userId: vendorId },
+                data: {
+                    isApproved: false,
+                    rejectedAt: new Date(),
+                    rejectionReason: rejectionNote,
+                    approvedAt: null,
+                    onboardingStep: 1
+                }
+            })
+        ]);
+
+        // Log for analytics
+        try {
+            await prisma.adminIssueAlert.create({
+                data: {
+                    vendorId: vendorId,
+                    issueType: 'vendor_rejection',
+                    severity: 'high',
+                    description: `Vendor rejected: ${rejectionNote}`,
+                    resolved: true,
+                    resolvedAt: new Date()
+                }
+            });
+        } catch (logErr) {
+            console.warn('[Analytics] Could not log rejection event:', logErr.message);
+        }
+
+        console.log(`[Rejection]: Vendor ${vendorId} rejected. Reason: ${rejectionNote}`);
+
+        res.json({
+            message: 'Vendor rejected successfully',
+            reason: rejectionNote,
+            user,
+            profile
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
 // Suspend/Reactivate vendor (Rejection)
 const suspendVendor = async (req, res) => {
     try {
@@ -1273,6 +1387,136 @@ const getNotifications = async (req, res) => {
     }
 };
 
+const onboardOutlet = async (req, res) => {
+    try {
+        const {
+            name,
+            location,
+            outletType,
+            servicesOffered,
+            dailyCapacity,
+            targetSla,
+            commissionRate,
+            managerOption,
+            managerId,
+            managerName,
+            managerEmail,
+            managerPhone,
+            managerPassword,
+            lat,
+            lng
+        } = req.body;
+
+        if (!name || !location) {
+            return res.status(400).json({ error: 'Outlet name and location are required.' });
+        }
+
+        let user;
+        if (managerOption === 'existing') {
+            if (!managerId) {
+                return res.status(400).json({ error: 'Manager user ID is required.' });
+            }
+            user = await prisma.user.findUnique({
+                where: { id: managerId }
+            });
+            if (!user) {
+                return res.status(404).json({ error: 'Selected manager user not found.' });
+            }
+            if (user.role !== 'vendor' && user.role !== 'admin') {
+                user = await prisma.user.update({
+                    where: { id: managerId },
+                    data: { role: 'vendor' }
+                });
+            }
+        } else {
+            if (!managerName || !managerEmail || !managerPhone || !managerPassword) {
+                return res.status(400).json({ error: 'All manager details (name, email, phone, password) are required.' });
+            }
+
+            const existingUser = await prisma.user.findFirst({
+                where: {
+                    OR: [
+                        { email: managerEmail },
+                        { phone: managerPhone }
+                    ]
+                }
+            });
+            if (existingUser) {
+                return res.status(400).json({ error: 'A user with this email or phone number already exists.' });
+            }
+
+            const hashedPassword = await bcrypt.hash(managerPassword, 10);
+            user = await prisma.user.create({
+                data: {
+                    name: managerName,
+                    email: managerEmail,
+                    phone: managerPhone,
+                    password: hashedPassword,
+                    role: 'vendor',
+                    status: 'active',
+                    isVerified: true
+                }
+            });
+        }
+
+        // Upsert vendor profile
+        let profile = await prisma.vendorProfile.findUnique({
+            where: { userId: user.id }
+        });
+
+        const formattedServices = Array.isArray(servicesOffered) 
+            ? servicesOffered.join(', ') 
+            : (servicesOffered || '');
+
+        const profileData = {
+            businessName: name,
+            city: location.split(',')[1]?.trim() || 'Mumbai',
+            area: location.split(',')[0]?.trim() || location,
+            servicesOffered: formattedServices,
+            dailyCapacity: dailyCapacity ? parseInt(dailyCapacity) : 200,
+            targetSla: targetSla ? parseInt(targetSla) : 24,
+            commissionRate: commissionRate ? parseFloat(commissionRate) : 18.0,
+            isApproved: true,
+            onboardingStep: 5
+        };
+
+        if (profile) {
+            profile = await prisma.vendorProfile.update({
+                where: { userId: user.id },
+                data: profileData
+            });
+        } else {
+            profile = await prisma.vendorProfile.create({
+                data: {
+                    userId: user.id,
+                    ...profileData
+                }
+            });
+        }
+
+        // Create Outlet
+        const outlet = await prisma.outlet.create({
+            data: {
+                vendorId: user.id,
+                name: name,
+                address: location,
+                lat: lat ? parseFloat(lat) : 19.0760,
+                lng: lng ? parseFloat(lng) : 72.8777
+            }
+        });
+
+        res.status(201).json({
+            message: 'Outlet registered successfully',
+            user,
+            profile,
+            outlet
+        });
+    } catch (error) {
+        console.error('Outlet Onboarding Error:', error);
+        res.status(500).json({ error: error.message });
+    }
+};
+
 module.exports = {
     // User Management
     getAllUsers,
@@ -1294,8 +1538,11 @@ module.exports = {
     getVendorById,
     updateVendor,
     approveVendor,
+    setVendorMaintenance,
+    rejectVendor,
     suspendVendor,
     getVendorPayouts,
+    onboardOutlet,
     // Dashboard
     getDashboardStats,
     getNotifications

@@ -200,6 +200,16 @@ router.patch(
   adminController.approveVendor
 );
 router.patch(
+  '/vendors/:id/maintenance',
+  authorizeAdminRoles(ADMIN_ROLES.SUPER_ADMIN, ADMIN_ROLES.OPERATIONS_ADMIN),
+  adminController.setVendorMaintenance
+);
+router.patch(
+  '/vendors/:vendorId/reject',
+  authorizeAdminRoles(ADMIN_ROLES.SUPER_ADMIN, ADMIN_ROLES.OPERATIONS_ADMIN),
+  adminController.rejectVendor
+);
+router.patch(
   '/vendors/:id/suspend',
   authorizeAdminRoles(ADMIN_ROLES.SUPER_ADMIN, ADMIN_ROLES.OPERATIONS_ADMIN),
   adminController.suspendVendor
@@ -208,6 +218,11 @@ router.get(
   '/vendors/:id/payouts',
   authorizeAdminRoles(ADMIN_ROLES.SUPER_ADMIN, ADMIN_ROLES.FINANCE_ADMIN),
   adminController.getVendorPayouts
+);
+router.post(
+  '/outlets/onboard',
+  authorizeAdminRoles(ADMIN_ROLES.SUPER_ADMIN, ADMIN_ROLES.OPERATIONS_ADMIN),
+  adminController.onboardOutlet
 );
 
 // ============================================

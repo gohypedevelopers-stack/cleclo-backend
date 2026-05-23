@@ -1,6 +1,41 @@
 const prisma = require('../utils/prisma');
 const { calculateDeliveryDate, getPriceMultiplier } = require('../utils/pricing');
 const { resolveCatalogPricing, validateLocationAndSlot } = require('../utils/catalogServiceClient');
+const { fetchUsersByIds } = require('../utils/authServiceClient');
+
+const buildMaintenanceOrderBlock = (vendor) => ({
+    message: 'Vendor outlet is under maintenance and cannot accept new orders',
+    code: 'VENDOR_MAINTENANCE',
+    vendorId: vendor.id,
+    vendorName: vendor.vendorProfile?.businessName || vendor.name,
+    reopenDate: vendor.vendorProfile?.reopenDate || null,
+    existingOrderProcessingAllowed: true
+});
+
+const ensureVendorCanAcceptNewOrder = async (vendorId) => {
+    if (!vendorId) return { allowed: true };
+
+    const vendors = await fetchUsersByIds([vendorId]);
+    const vendor = vendors[0];
+
+    if (!vendor || vendor.role !== 'vendor') {
+        return {
+            allowed: false,
+            status: 404,
+            payload: { message: 'Vendor not found', code: 'VENDOR_NOT_FOUND', vendorId }
+        };
+    }
+
+    if (vendor.vendorProfile?.isMaintenance) {
+        return {
+            allowed: false,
+            status: 409,
+            payload: buildMaintenanceOrderBlock(vendor)
+        };
+    }
+
+    return { allowed: true, vendor };
+};
 
 const createOrder = async (req, res) => {
     try {
@@ -21,6 +56,11 @@ const createOrder = async (req, res) => {
 
         if (!Array.isArray(items) || items.length === 0) {
             return res.status(400).json({ message: 'At least one order item is required' });
+        }
+
+        const vendorAvailability = await ensureVendorCanAcceptNewOrder(vendorId);
+        if (!vendorAvailability.allowed) {
+            return res.status(vendorAvailability.status).json(vendorAvailability.payload);
         }
 
         const validation = await validateLocationAndSlot({ cityCode, areaCode, areaName, pickupTime, slotId });

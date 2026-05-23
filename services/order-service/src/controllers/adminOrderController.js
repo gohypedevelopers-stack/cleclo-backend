@@ -1,6 +1,16 @@
 const prisma = require('../utils/prisma');
 const { fetchUsersByIds, searchUsers } = require('../utils/authServiceClient');
 
+const buildMaintenanceAssignmentBlock = (vendor) => ({
+    error: 'Vendor Under Maintenance',
+    message: 'This outlet is under maintenance and cannot receive new orders.',
+    code: 'VENDOR_MAINTENANCE',
+    vendorId: vendor.id,
+    vendorName: vendor.vendorProfile?.businessName || vendor.name,
+    reopenDate: vendor.vendorProfile?.reopenDate || null,
+    existingOrderProcessingAllowed: true
+});
+
 // Helper to enrich orders with user and vendor data
 const enrichOrdersData = async (orders) => {
     if (!orders.length) return [];
@@ -139,6 +149,19 @@ const assignVendor = async (req, res) => {
     try {
         const { id } = req.params;
         const { vendorId } = req.body;
+
+        if (!vendorId) return res.status(400).json({ error: 'Vendor ID is required' });
+
+        const vendors = await fetchUsersByIds([vendorId]);
+        const vendor = vendors[0];
+
+        if (!vendor || vendor.role !== 'vendor') {
+            return res.status(404).json({ error: 'Vendor not found' });
+        }
+
+        if (vendor.vendorProfile?.isMaintenance) {
+            return res.status(409).json(buildMaintenanceAssignmentBlock(vendor));
+        }
 
         const order = await prisma.order.update({
             where: { id },

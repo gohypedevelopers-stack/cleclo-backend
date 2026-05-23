@@ -124,6 +124,7 @@ model VendorProfile {
   businessType     String?
   servicesOffered  String?
   dailyCapacity    Int?
+  targetSla        Int?    @default(24)
   commissionRate   Float   @default(18)
   bankHolderName   String?
   bankName         String?

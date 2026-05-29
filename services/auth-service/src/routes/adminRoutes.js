@@ -276,4 +276,7 @@ router.patch(
   updateAdminProfile
 );
 
+router.get('/settings', adminController.getPlatformSettings);
+router.put('/settings', adminController.savePlatformSettings);
+
 module.exports = router;

@@ -64,6 +64,7 @@ const getAllOrders = async (req, res) => {
                 { areaName: { contains: search, mode: 'insensitive' } }
             ];
 
+
             const matchingUsers = await searchUsers(search);
             if (matchingUsers.length > 0) {
                 const matchingUserIds = matchingUsers.map(u => u.id);
@@ -93,6 +94,36 @@ const getAllOrders = async (req, res) => {
         ]);
 
         const enrichedOrders = await enrichOrdersData(orders);
+
+        // Auto-flag unassigned Express orders > 15 mins
+        const now = Date.now();
+        const ordersToFlag = [];
+        enrichedOrders.forEach(o => {
+            const isExpress = (o.deliveryType || '').toLowerCase().includes('express');
+            const isUnassigned = !o.riderId && !['delivered', 'cancelled', 'picked_up', 'received_by_vendor', 'ready_for_delivery', 'out_for_delivery'].includes(o.status?.toLowerCase());
+            if (isExpress && isUnassigned && !o.hasIssue && o.createdAt) {
+                const elapsedMins = (now - new Date(o.createdAt).getTime()) / 60000;
+                if (elapsedMins >= 15) {
+                    ordersToFlag.push(o.id);
+                    o.hasIssue = true;
+                    o.issueType = 'Auto-Flag: Dispatch Delay';
+                    o.issueNote = `Express order unassigned for >${Math.floor(elapsedMins)} mins`;
+                }
+            }
+        });
+
+        if (ordersToFlag.length > 0) {
+            // Fire and forget DB update
+            prisma.order.updateMany({
+                where: { id: { in: ordersToFlag } },
+                data: {
+                    hasIssue: true,
+                    issueType: 'Auto-Flag: Dispatch Delay',
+                    issueNote: 'Express order unassigned for >15 mins'
+                }
+            }).catch(err => console.error('Auto-flag error:', err));
+        }
+
         res.json({
             orders: enrichedOrders,
             pagination: {

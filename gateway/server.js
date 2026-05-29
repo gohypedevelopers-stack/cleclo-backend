@@ -65,6 +65,13 @@ app.use('/api/admin/orders', createProxyMiddleware({
     pathRewrite: { '^/api/admin/orders': '/admin/orders' },
 }));
 
+// --- SUPPORT TICKETS PROXIES ---
+app.use('/api/tickets', createProxyMiddleware({
+    target: process.env.AUTH_SERVICE_URL || 'http://localhost:3001',
+    changeOrigin: true,
+    pathRewrite: { '^/api/tickets': '/tickets' },
+}));
+
 app.listen(PORT, () => {
     console.log(`API Gateway running on port ${PORT}`);
 });

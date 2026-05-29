@@ -89,7 +89,107 @@ async function seed() {
     } catch (e) { console.log(`Skipping customer ${c.name}: ${e.message}`); }
   }
 
+  // Seed support tickets for all 8 feedback types
+  console.log("🎫 Seeding Support Tickets...");
+  const supportTickets = [
+    {
+      id: "t1-bug",
+      userId: "c1-uuid-aniket",
+      targetId: "v1-uuid-eco",
+      subject: "App crashes on add money ORD-9921",
+      category: "Bug",
+      message: "The app crashes when I try to add money to my wallet. This happens every time I enter an amount above ₹1000.",
+      priority: "critical",
+      status: "open",
+    },
+    {
+      id: "t2-feature",
+      userId: "c2-uuid-priya",
+      targetId: null,
+      subject: "Recurring order feature ORD-8821",
+      category: "Feature Request",
+      message: "It would be great to have a recurring order option for weekly laundry pickup.",
+      priority: "medium",
+      status: "open",
+    },
+    {
+      id: "t3-complaint",
+      userId: "c1-uuid-aniket",
+      targetId: "v2-uuid-sparkle",
+      subject: "Late delivery with missing items ORD-8234",
+      category: "Service Complaint",
+      message: "My order was delivered late and some items were missing. Order #ORD-8234.",
+      priority: "high",
+      status: "resolved",
+      resolvedAt: new Date(Date.now() - 3600000 * 2),
+    },
+    {
+      id: "t4-rider",
+      userId: "c2-uuid-priya",
+      targetId: "v1-uuid-eco",
+      subject: "Rude rider behavior ORD-7721",
+      category: "Rider Behavior",
+      message: "The rider was extremely rude and refused to come to the doorstep despite the instructions.",
+      priority: "high",
+      status: "open",
+    },
+    {
+      id: "t5-payment",
+      userId: "c1-uuid-aniket",
+      targetId: null,
+      subject: "Double deduction issue ORD-6621",
+      category: "Payment Issue",
+      message: "Amount was deducted twice for my last order. Please refund one transaction.",
+      priority: "medium",
+      status: "resolved",
+      resolvedAt: new Date(Date.now() - 3600000 * 4),
+    },
+    {
+      id: "t6-vendor",
+      userId: "c2-uuid-priya",
+      targetId: "v1-uuid-eco",
+      subject: "Chemical smell in clothes ORD-5542",
+      category: "Vendor Quality",
+      message: "The clothes returned from Clean Express - Andheri West had a strong chemical smell, and two white shirts had yellow spots. Very poor washing quality.",
+      priority: "high",
+      status: "open",
+    },
+    {
+      id: "t7-uiux",
+      userId: "c1-uuid-aniket",
+      targetId: null,
+      subject: "Order tracker font size ORD-4431",
+      category: "App UI/UX",
+      message: "The new UI is beautiful, but the font size in the order details screen is way too small. It makes it hard to read the item breakdown.",
+      priority: "low",
+      status: "open",
+    },
+    {
+      id: "t8-suggestion",
+      userId: "c2-uuid-priya",
+      targetId: null,
+      subject: "Multiple addresses option ORD-3320",
+      category: "Suggestion",
+      message: "It would be amazing if we could add multiple drop-off and pick-up locations in our profile instead of having to type them manually every time.",
+      priority: "low",
+      status: "open",
+    }
+  ];
+
+  for (const t of supportTickets) {
+    try {
+      await prisma.supportTicket.upsert({
+        where: { id: t.id },
+        update: t,
+        create: t
+      });
+    } catch (e) {
+      console.log(`Skipping support ticket ${t.subject}: ${e.message}`);
+    }
+  }
+
   console.log("✅ Auth Seed Completed!");
 }
 
 seed().catch(e => { console.error(e); process.exit(1); }).finally(() => prisma.$disconnect());
+

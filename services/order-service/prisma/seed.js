@@ -300,8 +300,153 @@ async function main() {
     });
     console.log('✅ Created order 7: Pickup assigned');
 
+    // 8. Seed specific order IDs that map directly to support feedback tickets
+    console.log('🌱 Seeding specific feedback ORD-xxxx orders...');
+    const feedbackOrders = [
+        {
+            id: 'ORD-9921',
+            userId: 'c1-uuid-aniket',
+            vendorId: 'v1-uuid-eco',
+            status: 'pending',
+            totalAmount: 1500,
+            pickupTime: relativeDate(0, 10),
+            deliveryTime: relativeDate(3, 18),
+            pickupAddress: 'A-11 Saket Enclave, Saket, Delhi',
+            deliveryAddress: 'A-11 Saket Enclave, Saket, Delhi',
+            serviceType: 'Standard',
+            paymentStatus: 'pending',
+            hasIssue: true,
+            issueType: 'delayed',
+            issueNote: 'Wallet issue crash reported'
+        },
+        {
+            id: 'ORD-8821',
+            userId: 'c2-uuid-priya',
+            vendorId: 'v1-uuid-eco',
+            status: 'processing',
+            totalAmount: 2400,
+            pickupTime: relativeDate(-1, 10),
+            deliveryTime: relativeDate(2, 18),
+            pickupAddress: 'Sector 56, Gurgaon',
+            deliveryAddress: 'Sector 56, Gurgaon',
+            serviceType: 'Standard',
+            paymentStatus: 'paid'
+        },
+        {
+            id: 'ORD-8234',
+            userId: 'c1-uuid-aniket',
+            vendorId: 'v2-uuid-sparkle',
+            status: 'delivered',
+            totalAmount: 1100,
+            pickupTime: relativeDate(-5, 10),
+            deliveryTime: relativeDate(-3, 18),
+            pickupAddress: 'MG Road, Bangalore',
+            deliveryAddress: 'MG Road, Bangalore',
+            serviceType: 'Standard',
+            paymentStatus: 'paid',
+            hasIssue: true,
+            issueType: 'item_missing',
+            issueNote: 'Late delivery with missing items'
+        },
+        {
+            id: 'ORD-7721',
+            userId: 'c2-uuid-priya',
+            vendorId: 'v1-uuid-eco',
+            status: 'pickup_assigned',
+            totalAmount: 850,
+            pickupTime: relativeDate(0, 14),
+            deliveryTime: relativeDate(3, 18),
+            pickupAddress: 'Residency Road, Bangalore',
+            deliveryAddress: 'Residency Road, Bangalore',
+            serviceType: 'Standard',
+            paymentStatus: 'paid',
+            hasIssue: true,
+            issueType: 'delayed',
+            issueNote: 'Rude rider behavior'
+        },
+        {
+            id: 'ORD-6621',
+            userId: 'c1-uuid-aniket',
+            vendorId: 'v2-uuid-sparkle',
+            status: 'delivered',
+            totalAmount: 1300,
+            pickupTime: relativeDate(-7, 10),
+            deliveryTime: relativeDate(-5, 18),
+            pickupAddress: 'DLF Phase 2, Gurgaon',
+            deliveryAddress: 'DLF Phase 2, Gurgaon',
+            serviceType: 'Standard',
+            paymentStatus: 'paid'
+        },
+        {
+            id: 'ORD-5542',
+            userId: 'c2-uuid-priya',
+            vendorId: 'v1-uuid-eco',
+            status: 'processing',
+            totalAmount: 3200,
+            pickupTime: relativeDate(-2, 10),
+            deliveryTime: relativeDate(1, 18),
+            pickupAddress: 'Saket Enclave, Delhi',
+            deliveryAddress: 'Saket Enclave, Delhi',
+            serviceType: 'Standard',
+            paymentStatus: 'paid',
+            hasIssue: true,
+            issueType: 'damage',
+            issueNote: 'Chemical smell and yellow spots on shirts'
+        },
+        {
+            id: 'ORD-4431',
+            userId: 'c1-uuid-aniket',
+            vendorId: 'v2-uuid-sparkle',
+            status: 'delivered',
+            totalAmount: 950,
+            pickupTime: relativeDate(-4, 10),
+            deliveryTime: relativeDate(-2, 18),
+            pickupAddress: 'Sector 56, Gurgaon',
+            deliveryAddress: 'Sector 56, Gurgaon',
+            serviceType: 'Standard',
+            paymentStatus: 'paid'
+        },
+        {
+            id: 'ORD-3320',
+            userId: 'c2-uuid-priya',
+            vendorId: 'v1-uuid-eco',
+            status: 'delivered',
+            totalAmount: 1800,
+            pickupTime: relativeDate(-6, 10),
+            deliveryTime: relativeDate(-4, 18),
+            pickupAddress: 'DLF Phase 2, Gurgaon',
+            deliveryAddress: 'DLF Phase 2, Gurgaon',
+            serviceType: 'Standard',
+            paymentStatus: 'paid'
+        }
+    ];
+
+    for (const fo of feedbackOrders) {
+        try {
+            await prisma.order.upsert({
+                where: { id: fo.id },
+                update: fo,
+                create: fo
+            });
+            // Create a default order item for each
+            await prisma.orderItem.create({
+                data: {
+                    orderId: fo.id,
+                    itemId: PLACEHOLDER_ITEM_IDS[0],
+                    itemName: 'Premium Shirts Dry Clean',
+                    quantity: 3,
+                    unitPrice: fo.totalAmount / 3,
+                    lineSubtotal: fo.totalAmount,
+                    lineTotal: fo.totalAmount
+                }
+            });
+        } catch (e) {
+            console.log(`Skipping feedback order ${fo.id}: ${e.message}`);
+        }
+    }
+
     console.log('\n✅ Order Service seeding completed!');
-    console.log('   - Created 7 orders with various statuses');
+    console.log('   - Created 7 orders plus 8 feedback-specific ORD-xxxx orders');
     console.log('   - Statuses: delivered, processing, pending, out_for_delivery, damaged, cancelled, pickup_assigned');
     console.log('\n💡 Note: Orders use placeholder IDs. To link to real users/items, update the IDs at the top of this file.');
 }

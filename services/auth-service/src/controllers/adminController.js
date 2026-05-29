@@ -1579,6 +1579,93 @@ const onboardOutlet = async (req, res) => {
     }
 };
 
+const fs = require('fs');
+const path = require('path');
+const SETTINGS_FILE_PATH = path.join(__dirname, '..', '..', 'platform_settings.json');
+
+const getPlatformSettings = async (req, res) => {
+    try {
+        if (fs.existsSync(SETTINGS_FILE_PATH)) {
+            const data = fs.readFileSync(SETTINGS_FILE_PATH, 'utf8');
+            return res.json(JSON.parse(data));
+        }
+        return res.json({
+            defaultCommissionRate: 15,
+            expressCommissionOverride: 18,
+            settlementCycle: "Weekly",
+            customVendorCommissions: [
+                { vendorName: "Royal Dry Cleaners", rate: 12 },
+                { vendorName: "EcoWash Solutions", rate: 14 },
+                { vendorName: "Express Laundry Hub", rate: 13.5 }
+            ],
+            notifications: {
+                orders: {
+                    expressAlert: { enabled: true, roles: ["Super Admin", "Operations Head"] },
+                    slaBreach: { enabled: true, roles: ["Operations Head", "Support Team"] },
+                    unassigned30m: { enabled: true, roles: ["Operations Head"] },
+                },
+                vendors: {
+                    settlementPending3d: { enabled: true, roles: ["Finance Manager"] },
+                    highComplaint: { enabled: true, roles: ["Vendor Manager", "Support Team"] },
+                },
+                riders: {
+                    lowRating: { enabled: true, roles: ["Operations Head"] },
+                    highCancellation: { enabled: true, roles: ["Operations Head"] },
+                    docExpiry: { enabled: true, roles: ["Operations Head"] },
+                },
+                finance: {
+                    failedPayout: { enabled: true, roles: ["Finance Manager"] },
+                    largeSettlement: { enabled: true, roles: ["Super Admin", "Finance Manager"] },
+                },
+            },
+            allocation: {
+                autoAssign: true,
+                priorityRule: "Nearest Rider",
+                expressMultiplier: 1.5,
+            },
+            riderPayout: {
+                baseRate: 40,
+                distanceRate: 10,
+                peakBonus: 15,
+                penaltyRules: "₹50 for no-show, ₹20 for late pickup",
+            },
+            sla: {
+                standardHours: 48,
+                expressHours: 24,
+                pickupHours: 2,
+                autoFlagBreach: true,
+                autoApplyPenalty: false,
+            },
+            compliance: {
+                gstPercent: 18,
+                tdsPercent: 1,
+                autoInvoice: true,
+                mandatoryPanGst: true,
+            },
+            policy: {
+                damageCap: 2000,
+                freeRewash: true,
+                lateCompAmount: 50,
+            },
+            supportedCities: ["Mumbai", "Bangalore", "Delhi"]
+        });
+    } catch (error) {
+        console.error('[getPlatformSettings Error]:', error);
+        res.status(500).json({ error: error.message });
+    }
+};
+
+const savePlatformSettings = async (req, res) => {
+    try {
+        const settingsData = req.body;
+        fs.writeFileSync(SETTINGS_FILE_PATH, JSON.stringify(settingsData, null, 2), 'utf8');
+        res.json({ message: 'Settings saved successfully', settings: settingsData });
+    } catch (error) {
+        console.error('[savePlatformSettings Error]:', error);
+        res.status(500).json({ error: error.message });
+    }
+};
+
 module.exports = {
     // User Management
     getAllUsers,
@@ -1601,11 +1688,15 @@ module.exports = {
     updateVendor,
     approveVendor,
     setVendorMaintenance,
+    closeVendor: rejectVendor, // Support duplicate names if any
     rejectVendor,
     suspendVendor,
     getVendorPayouts,
     onboardOutlet,
     // Dashboard
     getDashboardStats,
-    getNotifications
+    getNotifications,
+    // Settings
+    getPlatformSettings,
+    savePlatformSettings
 };
